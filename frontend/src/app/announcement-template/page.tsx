@@ -532,6 +532,19 @@ export default function AnnouncementTemplatePage() {
                             </Link>
                         </div>
 
+                        {/* Indian Sign Language (ISL) Section */}
+                        <div className="pt-6">
+                            <h3 className="px-3 text-sm font-bold text-gray-800 uppercase tracking-wider mb-3">
+                                Indian Sign Language (ISL)
+                            </h3>
+                            <Link href="/isl-dataset" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                                </svg>
+                                <span>ISL Dataset</span>
+                            </Link>
+                        </div>
+
                     </nav>
                 </aside>
 
