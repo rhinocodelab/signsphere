@@ -55,6 +55,23 @@ export default function RouteManagementPage() {
         isComplete: false,
         error: null as string | null
     })
+    const [showEditRouteProgressModal, setShowEditRouteProgressModal] = useState(false)
+    const [editRouteProgress, setEditRouteProgress] = useState({
+        step: '',
+        progress: 0,
+        isComplete: false,
+        error: null as string | null
+    })
+    const [showImportProgressModal, setShowImportProgressModal] = useState(false)
+    const [importProgress, setImportProgress] = useState({
+        step: '',
+        progress: 0,
+        isComplete: false,
+        error: null as string | null,
+        importedCount: 0,
+        skippedCount: 0,
+        totalCount: 0
+    })
     const [newRoute, setNewRoute] = useState({
         train_number: '',
         train_name: '',
@@ -273,8 +290,22 @@ export default function RouteManagementPage() {
             return
         }
 
+        // Check if any translatable fields have changed
+        const translatableFields = ['train_name', 'from_station', 'to_station']
+        const hasTranslatableChanges = translatableFields.some(field =>
+            routeToEdit[field as keyof TrainRoute] !== newRoute[field as keyof typeof newRoute]
+        )
+
         setEditingRoute(true)
-        const loadingToast = toast.loading('Updating route...')
+
+        // Show progress modal if translatable fields changed, otherwise use simple toast
+        let loadingToast: string | undefined
+        if (hasTranslatableChanges) {
+            setShowEditRouteProgressModal(true)
+            setEditRouteProgress({ step: 'Validating route data...', progress: 0, isComplete: false, error: null })
+        } else {
+            loadingToast = toast.loading('Updating route...')
+        }
 
         try {
             const apiUrl = window.location.hostname === 'localhost'
@@ -282,6 +313,21 @@ export default function RouteManagementPage() {
                 : 'https://192.168.1.10:5001'
 
             const accessToken = localStorage.getItem('accessToken')
+
+            // Simulate progress steps if showing progress modal
+            if (hasTranslatableChanges) {
+                const progressSteps = [
+                    { step: 'Validating route data...', progress: 10 },
+                    { step: 'Updating route information...', progress: 30 },
+                    { step: 'Generating translations...', progress: 70 },
+                    { step: 'Finalizing...', progress: 90 }
+                ]
+
+                for (const step of progressSteps) {
+                    setEditRouteProgress(prev => ({ ...prev, ...step }))
+                    await new Promise(resolve => setTimeout(resolve, 500))
+                }
+            }
 
             const response = await fetch(`${apiUrl}/api/v1/train-routes/${routeToEdit.id}`, {
                 method: 'PUT',
@@ -303,29 +349,79 @@ export default function RouteManagementPage() {
                     route.id === routeToEdit.id ? updatedRoute : route
                 ))
 
-                toast.dismiss(loadingToast)
-                toast.success('Route updated successfully!')
+                if (hasTranslatableChanges) {
+                    // Update progress modal
+                    setEditRouteProgress(prev => ({
+                        ...prev,
+                        step: 'Route updated successfully!',
+                        progress: 100,
+                        isComplete: true,
+                        error: null
+                    }))
 
-                // Reset form and close modal
-                setNewRoute({
-                    train_number: '',
-                    train_name: '',
-                    from_station_code: '',
-                    from_station: '',
-                    to_station_code: '',
-                    to_station: ''
-                })
-                setShowEditModal(false)
-                setRouteToEdit(null)
+                    // Auto-close modal after success
+                    setTimeout(() => {
+                        setShowEditRouteProgressModal(false)
+                        setEditRouteProgress({ step: '', progress: 0, isComplete: false, error: null })
+
+                        // Reset form and close edit modal
+                        setNewRoute({
+                            train_number: '',
+                            train_name: '',
+                            from_station_code: '',
+                            from_station: '',
+                            to_station_code: '',
+                            to_station: ''
+                        })
+                        setShowEditModal(false)
+                        setRouteToEdit(null)
+
+                        toast.success('Route updated and translations regenerated!')
+                    }, 1500)
+                } else {
+                    // Simple toast for non-translatable changes
+                    toast.dismiss(loadingToast)
+                    toast.success('Route updated successfully!')
+
+                    // Reset form and close modal
+                    setNewRoute({
+                        train_number: '',
+                        train_name: '',
+                        from_station_code: '',
+                        from_station: '',
+                        to_station_code: '',
+                        to_station: ''
+                    })
+                    setShowEditModal(false)
+                    setRouteToEdit(null)
+                }
             } else {
                 const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
-                toast.dismiss(loadingToast)
-                toast.error(errorData.detail || 'Failed to update route')
+
+                if (hasTranslatableChanges) {
+                    setEditRouteProgress(prev => ({
+                        ...prev,
+                        step: 'Failed to update route',
+                        error: errorData.detail || 'Unknown error'
+                    }))
+                } else {
+                    toast.dismiss(loadingToast)
+                    toast.error(errorData.detail || 'Failed to update route')
+                }
             }
         } catch (error) {
             console.error('Error updating route:', error)
-            toast.dismiss(loadingToast)
-            toast.error('Failed to update route')
+
+            if (hasTranslatableChanges) {
+                setEditRouteProgress(prev => ({
+                    ...prev,
+                    step: 'Failed to update route',
+                    error: 'Network error occurred'
+                }))
+            } else {
+                toast.dismiss(loadingToast)
+                toast.error('Failed to update route')
+            }
         } finally {
             setEditingRoute(false)
         }
@@ -398,17 +494,40 @@ export default function RouteManagementPage() {
         }
 
         setImportingRoutes(true)
-        const loadingToast = toast.loading('Importing routes...')
+        setShowImportProgressModal(true)
+        setImportProgress({
+            step: 'Validating file...',
+            progress: 0,
+            isComplete: false,
+            error: null,
+            importedCount: 0,
+            skippedCount: 0,
+            totalCount: 0
+        })
 
         try {
-            const formData = new FormData()
-            formData.append('file', selectedFile)
-
             const apiUrl = window.location.hostname === 'localhost'
                 ? 'https://localhost:5001'
                 : 'https://192.168.1.10:5001'
 
             const accessToken = localStorage.getItem('accessToken')
+
+            // Simulate progress steps
+            const progressSteps = [
+                { step: 'Validating file...', progress: 10 },
+                { step: 'Processing routes...', progress: 30 },
+                { step: 'Checking existing routes...', progress: 50 },
+                { step: 'Generating translations...', progress: 80 },
+                { step: 'Finalizing import...', progress: 90 }
+            ]
+
+            for (const step of progressSteps) {
+                setImportProgress(prev => ({ ...prev, ...step }))
+                await new Promise(resolve => setTimeout(resolve, 800))
+            }
+
+            const formData = new FormData()
+            formData.append('file', selectedFile)
 
             const response = await fetch(`${apiUrl}/api/v1/train-routes/import`, {
                 method: 'POST',
@@ -420,6 +539,18 @@ export default function RouteManagementPage() {
 
             if (response.ok) {
                 const result = await response.json()
+
+                // Update progress with actual results
+                setImportProgress(prev => ({
+                    ...prev,
+                    step: 'Import completed successfully!',
+                    progress: 100,
+                    isComplete: true,
+                    error: null,
+                    importedCount: result.imported_count || 0,
+                    skippedCount: result.skipped_count || 0,
+                    totalCount: result.total_count || 0
+                }))
 
                 // Refresh the routes list
                 const routesResponse = await fetch(`${apiUrl}/api/v1/train-routes/`, {
@@ -434,21 +565,47 @@ export default function RouteManagementPage() {
                     setFilteredRoutes(routes)
                 }
 
-                toast.dismiss(loadingToast)
-                toast.success(`Successfully imported ${result.imported_count} routes!`)
+                // Auto-close modal after success
+                setTimeout(() => {
+                    setShowImportProgressModal(false)
+                    setImportProgress({
+                        step: '',
+                        progress: 0,
+                        isComplete: false,
+                        error: null,
+                        importedCount: 0,
+                        skippedCount: 0,
+                        totalCount: 0
+                    })
 
-                // Close modal and reset
-                setShowImportModal(false)
-                setSelectedFile(null)
+                    // Close import modal and reset
+                    setShowImportModal(false)
+                    setSelectedFile(null)
+
+                    // Show success toast with detailed results
+                    const imported = result.imported_count || 0
+                    const skipped = result.skipped_count || 0
+                    if (skipped > 0) {
+                        toast.success(`Import completed! ${imported} routes imported, ${skipped} existing routes skipped.`)
+                    } else {
+                        toast.success(`Successfully imported ${imported} routes with translations!`)
+                    }
+                }, 2000)
             } else {
                 const errorData = await response.json().catch(() => ({ detail: 'Import failed' }))
-                toast.dismiss(loadingToast)
-                toast.error(errorData.detail || 'Failed to import routes')
+                setImportProgress(prev => ({
+                    ...prev,
+                    step: 'Import failed',
+                    error: errorData.detail || 'Failed to import routes'
+                }))
             }
         } catch (error) {
             console.error('Error importing routes:', error)
-            toast.dismiss(loadingToast)
-            toast.error('Failed to import routes')
+            setImportProgress(prev => ({
+                ...prev,
+                step: 'Import failed',
+                error: 'Network error occurred'
+            }))
         } finally {
             setImportingRoutes(false)
         }
@@ -878,35 +1035,24 @@ export default function RouteManagementPage() {
                             <h1 className="text-3xl font-bold text-gray-900 mb-2">Route Management</h1>
                             <p className="text-gray-600">Manage train routes and station information</p>
 
-                            {/* Translation Status Summary */}
-                            {trainRoutes.length > 0 && (
-                                <div className="mt-4 flex flex-wrap gap-4">
-                                    <div className="flex items-center space-x-2 px-3 py-2 bg-blue-50 rounded-lg">
-                                        <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
-                                        </svg>
-                                        <span className="text-sm font-medium text-blue-800">
-                                            Total Routes: {trainRoutes.length}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center space-x-2 px-3 py-2 bg-green-50 rounded-lg">
-                                        <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                        </svg>
-                                        <span className="text-sm font-medium text-green-800">
-                                            Translated: {trainRoutes.filter(route => route.is_translated).length}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center space-x-2 px-3 py-2 bg-yellow-50 rounded-lg">
-                                        <svg className="w-4 h-4 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                        </svg>
-                                        <span className="text-sm font-medium text-yellow-800">
-                                            Need Translation: {trainRoutes.filter(route => !route.is_translated).length}
-                                        </span>
+                            {/* Translation Information */}
+                            <div className="mt-4 p-3 bg-teal-50 border border-teal-200 rounded-lg">
+                                <div className="flex items-start space-x-3">
+                                    <svg className="w-5 h-5 text-teal-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <div>
+                                        <p className="text-sm text-teal-800">
+                                            <span className="font-medium">Translation Information:</span> All train route translations (Hindi, Marathi, Gujarati) are available in the
+                                            <Link href="/ai-generated-assets/translations" className="font-medium text-teal-700 hover:text-teal-900 underline mx-1">
+                                                Train Route Translations
+                                            </Link>
+                                            page.
+                                        </p>
                                     </div>
                                 </div>
-                            )}
+                            </div>
+
                         </div>
 
                         {/* Train Routes Table with Search and Actions */}
@@ -1678,10 +1824,10 @@ export default function RouteManagementPage() {
                                 <div className="w-full bg-gray-200 rounded-full h-2">
                                     <div
                                         className={`h-2 rounded-full transition-all duration-500 ${addRouteProgress.isComplete
-                                                ? 'bg-green-500'
-                                                : addRouteProgress.error
-                                                    ? 'bg-red-500'
-                                                    : 'bg-teal-500'
+                                            ? 'bg-green-500'
+                                            : addRouteProgress.error
+                                                ? 'bg-red-500'
+                                                : 'bg-teal-500'
                                             }`}
                                         style={{ width: `${addRouteProgress.progress}%` }}
                                     ></div>
@@ -1734,6 +1880,233 @@ export default function RouteManagementPage() {
                                                 progress: 0,
                                                 isComplete: false,
                                                 error: null
+                                            })
+                                        }}
+                                        className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Route Progress Modal */}
+            {showEditRouteProgressModal && routeToEdit && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+                        <div className="p-6">
+                            {/* Header */}
+                            <div className="flex items-center mb-6">
+                                <div className="flex-shrink-0">
+                                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                        <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div className="ml-4">
+                                    <h3 className="text-lg font-medium text-gray-900">Updating Route</h3>
+                                    <p className="text-sm text-gray-500">Train: {routeToEdit.train_number}</p>
+                                </div>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="mb-6">
+                                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                                    <span>{editRouteProgress.step}</span>
+                                    <span>{editRouteProgress.progress}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div
+                                        className={`h-2 rounded-full transition-all duration-500 ${editRouteProgress.isComplete
+                                            ? 'bg-green-500'
+                                            : editRouteProgress.error
+                                                ? 'bg-red-500'
+                                                : 'bg-blue-500'
+                                            }`}
+                                        style={{ width: `${editRouteProgress.progress}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+
+                            {/* Status Message */}
+                            <div className="mb-6">
+                                {editRouteProgress.error ? (
+                                    <div className="flex items-center p-3 bg-red-50 border border-red-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-red-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div>
+                                            <p className="text-sm font-medium text-red-800">Error</p>
+                                            <p className="text-sm text-red-600">{editRouteProgress.error}</p>
+                                        </div>
+                                    </div>
+                                ) : editRouteProgress.isComplete ? (
+                                    <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                        <div>
+                                            <p className="text-sm font-medium text-green-800">Success</p>
+                                            <p className="text-sm text-green-600">Route updated and translations regenerated!</p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-blue-500 mr-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                        <div>
+                                            <p className="text-sm font-medium text-blue-800">Processing</p>
+                                            <p className="text-sm text-blue-600">Please wait while we update your route...</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Action Buttons */}
+                            {editRouteProgress.error && (
+                                <div className="flex justify-end space-x-3">
+                                    <button
+                                        onClick={() => {
+                                            setShowEditRouteProgressModal(false)
+                                            setEditRouteProgress({
+                                                step: '',
+                                                progress: 0,
+                                                isComplete: false,
+                                                error: null
+                                            })
+                                        }}
+                                        className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Import Progress Modal */}
+            {showImportProgressModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+                        <div className="p-6">
+                            {/* Header */}
+                            <div className="flex items-center mb-6">
+                                <div className="flex-shrink-0">
+                                    <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                                        <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div className="ml-4">
+                                    <h3 className="text-lg font-medium text-gray-900">Importing Routes</h3>
+                                    <p className="text-sm text-gray-500">File: {selectedFile?.name}</p>
+                                </div>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="mb-6">
+                                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                                    <span>{importProgress.step}</span>
+                                    <span>{importProgress.progress}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div
+                                        className={`h-2 rounded-full transition-all duration-500 ${importProgress.isComplete
+                                            ? 'bg-green-500'
+                                            : importProgress.error
+                                                ? 'bg-red-500'
+                                                : 'bg-purple-500'
+                                            }`}
+                                        style={{ width: `${importProgress.progress}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+
+                            {/* Import Results */}
+                            {importProgress.isComplete && (
+                                <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                                    <div className="flex items-center mb-3">
+                                        <svg className="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <h4 className="text-sm font-medium text-green-800">Import Summary</h4>
+                                    </div>
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex justify-between">
+                                            <span className="text-green-700">Total Processed:</span>
+                                            <span className="font-medium text-green-800">{importProgress.totalCount}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-green-700">Successfully Imported:</span>
+                                            <span className="font-medium text-green-800">{importProgress.importedCount}</span>
+                                        </div>
+                                        {importProgress.skippedCount > 0 && (
+                                            <div className="flex justify-between">
+                                                <span className="text-green-700">Skipped (Already Exist):</span>
+                                                <span className="font-medium text-green-800">{importProgress.skippedCount}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Status Message */}
+                            <div className="mb-6">
+                                {importProgress.error ? (
+                                    <div className="flex items-center p-3 bg-red-50 border border-red-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-red-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div>
+                                            <p className="text-sm font-medium text-red-800">Error</p>
+                                            <p className="text-sm text-red-600">{importProgress.error}</p>
+                                        </div>
+                                    </div>
+                                ) : importProgress.isComplete ? (
+                                    <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                        <div>
+                                            <p className="text-sm font-medium text-green-800">Success</p>
+                                            <p className="text-sm text-green-600">Routes imported with translations!</p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-purple-500 mr-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                        <div>
+                                            <p className="text-sm font-medium text-purple-800">Processing</p>
+                                            <p className="text-sm text-purple-600">Please wait while we import your routes...</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Action Buttons */}
+                            {importProgress.error && (
+                                <div className="flex justify-end space-x-3">
+                                    <button
+                                        onClick={() => {
+                                            setShowImportProgressModal(false)
+                                            setImportProgress({
+                                                step: '',
+                                                progress: 0,
+                                                isComplete: false,
+                                                error: null,
+                                                importedCount: 0,
+                                                skippedCount: 0,
+                                                totalCount: 0
                                             })
                                         }}
                                         className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
