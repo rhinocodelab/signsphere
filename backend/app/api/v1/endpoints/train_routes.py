@@ -13,7 +13,7 @@ def create_train_route(
     train_route: TrainRouteCreate,
     db: Session = Depends(get_db)
 ):
-    """Create a new train route"""
+    """Create a new train route and automatically generate translations"""
     train_route_service = get_train_route_service(db)
 
     # Check if train route already exists
@@ -25,7 +25,56 @@ def create_train_route(
             detail=f"Train route with number {train_route.train_number} already exists"
         )
 
-    return train_route_service.create_train_route(train_route)
+    # Create the train route
+    created_route = train_route_service.create_train_route(train_route)
+
+    # Automatically generate translations
+    try:
+        from app.services.train_route_translation import get_train_route_translation_service
+        from app.schemas.train_route_translation import TranslationRequest
+
+        translation_service = get_train_route_translation_service(db)
+
+        # Create translation request
+        translation_request = TranslationRequest(
+            train_route_id=created_route.id,
+            train_name_en=created_route.train_name,
+            from_station_en=created_route.from_station,
+            to_station_en=created_route.to_station,
+            source_language_code="en"
+        )
+
+        # Generate and save translations
+        translation_response = translation_service.translate_train_route(
+            translation_request)
+
+        # Create translation record
+        from app.schemas.train_route_translation import TrainRouteTranslationCreate
+        translation_data = TrainRouteTranslationCreate(
+            train_route_id=translation_response.train_route_id,
+            train_name_en=translation_response.train_name_en,
+            from_station_en=translation_response.from_station_en,
+            to_station_en=translation_response.to_station_en,
+            train_name_hi=translation_response.train_name_hi,
+            from_station_hi=translation_response.from_station_hi,
+            to_station_hi=translation_response.to_station_hi,
+            train_name_mr=translation_response.train_name_mr,
+            from_station_mr=translation_response.from_station_mr,
+            to_station_mr=translation_response.to_station_mr,
+            train_name_gu=translation_response.train_name_gu,
+            from_station_gu=translation_response.from_station_gu,
+            to_station_gu=translation_response.to_station_gu
+        )
+
+        # Save translation to database
+        translation_service.create_train_route_translation(translation_data)
+
+    except Exception as e:
+        # If translation fails, log the error but don't fail the route creation
+        print(f"Auto-translation failed for route {created_route.id}: {e}")
+        # The route is still created successfully, just without translations
+
+    return created_route
 
 
 @router.get("/", response_model=List[TrainRoute])

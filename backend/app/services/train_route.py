@@ -47,17 +47,33 @@ class TrainRouteService:
         return db_train_route
 
     def delete_train_route(self, train_route_id: int) -> bool:
-        """Delete a train route"""
+        """Delete a train route and its associated translations"""
         db_train_route = self.get_train_route(train_route_id)
         if db_train_route:
+            # First, delete any associated translations
+            from app.models.train_route_translation import TrainRouteTranslation
+            translations = self.db.query(TrainRouteTranslation).filter(
+                TrainRouteTranslation.train_route_id == train_route_id
+            ).all()
+
+            for translation in translations:
+                self.db.delete(translation)
+
+            # Then delete the train route
             self.db.delete(db_train_route)
             self.db.commit()
             return True
         return False
 
     def clear_all_train_routes(self) -> int:
-        """Clear all train routes from the database"""
+        """Clear all train routes and their associated translations from the database"""
         count = self.db.query(TrainRoute).count()
+
+        # First, delete all translations
+        from app.models.train_route_translation import TrainRouteTranslation
+        self.db.query(TrainRouteTranslation).delete()
+
+        # Then delete all train routes
         self.db.query(TrainRoute).delete()
         self.db.commit()
         return count

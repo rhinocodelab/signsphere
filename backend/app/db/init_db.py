@@ -2,6 +2,8 @@ from sqlalchemy.orm import Session
 from app.core.security import get_password_hash
 from app.models.user import User
 from app.models.train_route import TrainRoute  # Import to ensure table creation
+# Import to ensure table creation
+from app.models.train_route_translation import TrainRouteTranslation
 from app.db.base_class import Base
 from app.db.session import engine
 

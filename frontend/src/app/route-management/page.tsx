@@ -13,6 +13,7 @@ interface TrainRoute {
     from_station: string
     to_station_code: string
     to_station: string
+    is_translated: boolean
     created_at: string
     updated_at?: string
 }
@@ -39,6 +40,21 @@ export default function RouteManagementPage() {
     const [importingRoutes, setImportingRoutes] = useState(false)
     const [dragActive, setDragActive] = useState(false)
     const [selectedFile, setSelectedFile] = useState<File | null>(null)
+    const [showTranslationModal, setShowTranslationModal] = useState(false)
+    const [translatingRoute, setTranslatingRoute] = useState<TrainRoute | null>(null)
+    const [translationProgress, setTranslationProgress] = useState({
+        step: '',
+        progress: 0,
+        isComplete: false,
+        error: null as string | null
+    })
+    const [showAddRouteProgressModal, setShowAddRouteProgressModal] = useState(false)
+    const [addRouteProgress, setAddRouteProgress] = useState({
+        step: '',
+        progress: 0,
+        isComplete: false,
+        error: null as string | null
+    })
     const [newRoute, setNewRoute] = useState({
         train_number: '',
         train_name: '',
@@ -90,36 +106,37 @@ export default function RouteManagementPage() {
         checkAuth()
     }, [router])
 
-    // Fetch train routes
-    useEffect(() => {
-        const fetchTrainRoutes = async () => {
-            try {
-                const apiUrl = window.location.hostname === 'localhost'
-                    ? 'https://localhost:5001'
-                    : 'https://192.168.1.10:5001'
+    // Fetch train routes function
+    const fetchTrainRoutes = async () => {
+        try {
+            const apiUrl = window.location.hostname === 'localhost'
+                ? 'https://localhost:5001'
+                : 'https://192.168.1.10:5001'
 
-                const response = await fetch(`${apiUrl}/api/v1/train-routes/`, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-                    },
-                })
+            const response = await fetch(`${apiUrl}/api/v1/train-routes/`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+                },
+            })
 
-                if (response.ok) {
-                    const data = await response.json()
-                    setTrainRoutes(data)
-                    setFilteredRoutes(data)
-                } else {
-                    toast.error('Failed to fetch train routes')
-                }
-            } catch (error) {
-                console.error('Error fetching train routes:', error)
-                toast.error('Network error while fetching train routes')
-            } finally {
-                setLoading(false)
+            if (response.ok) {
+                const data = await response.json()
+                setTrainRoutes(data)
+                setFilteredRoutes(data)
+            } else {
+                toast.error('Failed to fetch train routes')
             }
+        } catch (error) {
+            console.error('Error fetching train routes:', error)
+            toast.error('Network error while fetching train routes')
+        } finally {
+            setLoading(false)
         }
+    }
 
+    // Fetch train routes on component mount
+    useEffect(() => {
         if (user) {
             fetchTrainRoutes()
         }
@@ -512,9 +529,35 @@ export default function RouteManagementPage() {
         }
 
         setAddingRoute(true)
-        const loadingToast = toast.loading('Adding new route...')
+
+        // Show progress modal
+        setShowAddRouteProgressModal(true)
+        setAddRouteProgress({
+            step: 'Validating route data...',
+            progress: 0,
+            isComplete: false,
+            error: null
+        })
 
         try {
+            // Simulate progress steps
+            const progressSteps = [
+                { step: 'Validating route data...', progress: 20 },
+                { step: 'Creating train route...', progress: 40 },
+                { step: 'Generating translations...', progress: 70 },
+                { step: 'Finalizing...', progress: 90 }
+            ]
+
+            // Simulate progress
+            for (const step of progressSteps) {
+                setAddRouteProgress(prev => ({
+                    ...prev,
+                    step: step.step,
+                    progress: step.progress
+                }))
+                await new Promise(resolve => setTimeout(resolve, 500))
+            }
+
             const apiUrl = window.location.hostname === 'localhost'
                 ? 'https://localhost:5001'
                 : 'https://192.168.1.10:5001'
@@ -537,10 +580,19 @@ export default function RouteManagementPage() {
                 setTrainRoutes(prev => [addedRoute, ...prev])
                 setFilteredRoutes(prev => [addedRoute, ...prev])
 
-                toast.dismiss(loadingToast)
-                toast.success('Route added successfully!')
+                // Complete progress
+                setAddRouteProgress(prev => ({
+                    ...prev,
+                    step: 'Route added successfully!',
+                    progress: 100,
+                    isComplete: true
+                }))
 
-                // Reset form and close modal
+                // Wait a moment to show completion
+                await new Promise(resolve => setTimeout(resolve, 1000))
+
+                // Close progress modal and reset form
+                setShowAddRouteProgressModal(false)
                 setNewRoute({
                     train_number: '',
                     train_name: '',
@@ -550,15 +602,23 @@ export default function RouteManagementPage() {
                     to_station: ''
                 })
                 setShowAddRouteModal(false)
+
+                toast.success('Route added successfully!')
             } else {
                 const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
-                toast.dismiss(loadingToast)
-                toast.error(errorData.detail || 'Failed to add route')
+                setAddRouteProgress(prev => ({
+                    ...prev,
+                    step: 'Failed to add route',
+                    error: errorData.detail || 'Unknown error'
+                }))
             }
         } catch (error) {
             console.error('Error adding route:', error)
-            toast.dismiss(loadingToast)
-            toast.error('Failed to add route')
+            setAddRouteProgress(prev => ({
+                ...prev,
+                step: 'Failed to add route',
+                error: 'Network error occurred'
+            }))
         } finally {
             setAddingRoute(false)
         }
@@ -568,6 +628,92 @@ export default function RouteManagementPage() {
     const handleDeleteRoute = (routeId: number, trainNumber: string) => {
         setRouteToDelete({ id: routeId, trainNumber })
         setShowDeleteModal(true)
+    }
+
+    // Handle translate route
+    const handleTranslateRoute = async (route: TrainRoute) => {
+        setTranslatingRoute(route)
+        setShowTranslationModal(true)
+        setTranslationProgress({
+            step: 'Initializing translation...',
+            progress: 0,
+            isComplete: false,
+            error: null
+        })
+
+        try {
+            // Simulate progress steps
+            const progressSteps = [
+                { step: 'Connecting to AI service...', progress: 20 },
+                { step: 'Translating train name...', progress: 40 },
+                { step: 'Translating from station...', progress: 60 },
+                { step: 'Translating to station...', progress: 80 },
+                { step: 'Saving translations...', progress: 90 }
+            ]
+
+            // Simulate progress
+            for (const progressStep of progressSteps) {
+                setTranslationProgress(prev => ({
+                    ...prev,
+                    step: progressStep.step,
+                    progress: progressStep.progress
+                }))
+                await new Promise(resolve => setTimeout(resolve, 800))
+            }
+
+            const translationRequest = {
+                train_route_id: route.id,
+                train_name_en: route.train_name,
+                from_station_en: route.from_station,
+                to_station_en: route.to_station,
+                source_language_code: "en"
+            }
+
+            const response = await fetch('https://localhost:5001/api/v1/train-route-translations/translate-and-save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(translationRequest)
+            })
+
+            if (response.ok) {
+                setTranslationProgress(prev => ({
+                    ...prev,
+                    step: 'Translation completed successfully!',
+                    progress: 100,
+                    isComplete: true
+                }))
+
+                // Wait a moment to show completion, then close modal and refresh
+                setTimeout(() => {
+                    setShowTranslationModal(false)
+                    setTranslatingRoute(null)
+                    setTranslationProgress({
+                        step: '',
+                        progress: 0,
+                        isComplete: false,
+                        error: null
+                    })
+                    toast.success(`Translation generated for ${route.train_number}`)
+                    fetchTrainRoutes()
+                }, 1500)
+            } else {
+                const errorData = await response.json()
+                setTranslationProgress(prev => ({
+                    ...prev,
+                    step: 'Translation failed',
+                    error: errorData.detail || 'Failed to generate translation'
+                }))
+            }
+        } catch (error) {
+            console.error('Error generating translation:', error)
+            setTranslationProgress(prev => ({
+                ...prev,
+                step: 'Translation failed',
+                error: 'Failed to generate translation'
+            }))
+        }
     }
 
     // Handle actual delete operation
@@ -708,6 +854,19 @@ export default function RouteManagementPage() {
                             </svg>
                             <span>Route Management</span>
                         </Link>
+
+                        {/* AI Content Generation Section */}
+                        <div className="pt-6">
+                            <h3 className="px-3 text-sm font-bold text-gray-800 uppercase tracking-wider mb-3">
+                                AI Content Generation
+                            </h3>
+                            <Link href="/ai-generated-assets" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                                </svg>
+                                <span>AI Generated Assets</span>
+                            </Link>
+                        </div>
                     </nav>
                 </aside>
 
@@ -718,6 +877,36 @@ export default function RouteManagementPage() {
                         <div className="mb-8 pt-4">
                             <h1 className="text-3xl font-bold text-gray-900 mb-2">Route Management</h1>
                             <p className="text-gray-600">Manage train routes and station information</p>
+
+                            {/* Translation Status Summary */}
+                            {trainRoutes.length > 0 && (
+                                <div className="mt-4 flex flex-wrap gap-4">
+                                    <div className="flex items-center space-x-2 px-3 py-2 bg-blue-50 rounded-lg">
+                                        <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+                                        </svg>
+                                        <span className="text-sm font-medium text-blue-800">
+                                            Total Routes: {trainRoutes.length}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center space-x-2 px-3 py-2 bg-green-50 rounded-lg">
+                                        <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                        </svg>
+                                        <span className="text-sm font-medium text-green-800">
+                                            Translated: {trainRoutes.filter(route => route.is_translated).length}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center space-x-2 px-3 py-2 bg-yellow-50 rounded-lg">
+                                        <svg className="w-4 h-4 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                        </svg>
+                                        <span className="text-sm font-medium text-yellow-800">
+                                            Need Translation: {trainRoutes.filter(route => !route.is_translated).length}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* Train Routes Table with Search and Actions */}
@@ -817,9 +1006,19 @@ export default function RouteManagementPage() {
                                         </thead>
                                         <tbody className="bg-white divide-y divide-gray-200">
                                             {filteredRoutes.map((route) => (
-                                                <tr key={route.id} className="hover:bg-gray-50 transition-colors">
+                                                <tr key={route.id} className={`hover:bg-gray-50 transition-colors ${!route.is_translated ? 'bg-yellow-50 border-l-4 border-yellow-400' : ''}`}>
                                                     <td className="px-6 py-4 whitespace-nowrap">
-                                                        <div className="text-sm font-medium text-gray-900">{route.train_number}</div>
+                                                        <div className="flex items-center space-x-2">
+                                                            <div className="text-sm font-medium text-gray-900">{route.train_number}</div>
+                                                            {!route.is_translated && (
+                                                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800" title="Translation needed">
+                                                                    <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                                                    </svg>
+                                                                    Not Translated
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap">
                                                         <div className="text-sm font-medium text-gray-900">{route.train_name}</div>
@@ -843,6 +1042,17 @@ export default function RouteManagementPage() {
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                                                 </svg>
                                                             </button>
+                                                            {!route.is_translated && (
+                                                                <button
+                                                                    onClick={() => handleTranslateRoute(route)}
+                                                                    className="p-2 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded transition-colors"
+                                                                    title="Generate Translation"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                                                                    </svg>
+                                                                </button>
+                                                            )}
                                                             <button
                                                                 onClick={() => handleDeleteRoute(route.id, route.train_number)}
                                                                 className="p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded transition-colors"
@@ -1434,6 +1644,192 @@ export default function RouteManagementPage() {
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add Route Progress Modal */}
+            {showAddRouteProgressModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+                        <div className="p-6">
+                            {/* Header */}
+                            <div className="flex items-center mb-6">
+                                <div className="flex-shrink-0">
+                                    <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center">
+                                        <svg className="w-6 h-6 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div className="ml-4">
+                                    <h3 className="text-lg font-medium text-gray-900">Adding Route</h3>
+                                    <p className="text-sm text-gray-500">Train: {newRoute.train_number}</p>
+                                </div>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="mb-6">
+                                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                                    <span>{addRouteProgress.step}</span>
+                                    <span>{addRouteProgress.progress}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div
+                                        className={`h-2 rounded-full transition-all duration-500 ${addRouteProgress.isComplete
+                                                ? 'bg-green-500'
+                                                : addRouteProgress.error
+                                                    ? 'bg-red-500'
+                                                    : 'bg-teal-500'
+                                            }`}
+                                        style={{ width: `${addRouteProgress.progress}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+
+                            {/* Status Message */}
+                            <div className="mb-6">
+                                {addRouteProgress.error ? (
+                                    <div className="flex items-center p-3 bg-red-50 border border-red-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-red-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div>
+                                            <p className="text-sm font-medium text-red-800">Error</p>
+                                            <p className="text-sm text-red-600">{addRouteProgress.error}</p>
+                                        </div>
+                                    </div>
+                                ) : addRouteProgress.isComplete ? (
+                                    <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                        <div>
+                                            <p className="text-sm font-medium text-green-800">Success</p>
+                                            <p className="text-sm text-green-600">Route added successfully with translations!</p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center p-3 bg-teal-50 border border-teal-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-teal-500 mr-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                        <div>
+                                            <p className="text-sm font-medium text-teal-800">Processing</p>
+                                            <p className="text-sm text-teal-600">Please wait while we add your route...</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Action Buttons */}
+                            {addRouteProgress.error && (
+                                <div className="flex justify-end space-x-3">
+                                    <button
+                                        onClick={() => {
+                                            setShowAddRouteProgressModal(false)
+                                            setAddRouteProgress({
+                                                step: '',
+                                                progress: 0,
+                                                isComplete: false,
+                                                error: null
+                                            })
+                                        }}
+                                        className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Translation Progress Modal */}
+            {showTranslationModal && translatingRoute && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+                        <div className="p-6">
+                            {/* Header */}
+                            <div className="flex items-center mb-6">
+                                <div className="flex-shrink-0">
+                                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                        <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div className="ml-4">
+                                    <h3 className="text-lg font-medium text-gray-900">Generating Translation</h3>
+                                    <p className="text-sm text-gray-500">Train: {translatingRoute.train_number}</p>
+                                </div>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="mb-6">
+                                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                                    <span>{translationProgress.step}</span>
+                                    <span>{translationProgress.progress}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div
+                                        className={`h-2 rounded-full transition-all duration-500 ${translationProgress.isComplete
+                                            ? 'bg-green-500'
+                                            : translationProgress.error
+                                                ? 'bg-red-500'
+                                                : 'bg-blue-500'
+                                            }`}
+                                        style={{ width: `${translationProgress.progress}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+
+                            {/* Status Message */}
+                            <div className="mb-6">
+                                {translationProgress.error ? (
+                                    <div className="flex items-center p-3 bg-red-50 border border-red-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-red-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <span className="text-sm text-red-700">{translationProgress.error}</span>
+                                    </div>
+                                ) : translationProgress.isComplete ? (
+                                    <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <span className="text-sm text-green-700">Translation completed successfully!</span>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                                        <span className="text-sm text-blue-700">Processing translation...</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Action Buttons */}
+                            {translationProgress.error && (
+                                <div className="flex justify-end space-x-3">
+                                    <button
+                                        onClick={() => {
+                                            setShowTranslationModal(false)
+                                            setTranslatingRoute(null)
+                                            setTranslationProgress({
+                                                step: '',
+                                                progress: 0,
+                                                isComplete: false,
+                                                error: null
+                                            })
+                                        }}
+                                        className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors duration-200"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
