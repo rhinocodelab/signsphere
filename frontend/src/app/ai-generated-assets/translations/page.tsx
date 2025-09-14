@@ -328,7 +328,7 @@ export default function TranslationsTablePage() {
                                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                                 }`}
                                         >
-                                            {getLanguageCode(lang)}
+                                            {getLanguageLabel(lang)}
                                         </button>
                                     ))}
                                 </div>
@@ -501,7 +501,7 @@ export default function TranslationsTablePage() {
                                                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                                     }`}
                                             >
-                                                {getLanguageCode(lang)}
+                                                {getLanguageLabel(lang)}
                                             </button>
                                         ))}
                                     </div>

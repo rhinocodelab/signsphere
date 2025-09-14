@@ -27,7 +27,7 @@ export default function AnnouncementTemplatePage() {
     const [searchQuery, setSearchQuery] = useState('')
     const [filteredTemplates, setFilteredTemplates] = useState<AnnouncementTemplate[]>([])
     const [currentPage, setCurrentPage] = useState(1)
-    const [itemsPerPage] = useState(3)
+    const [itemsPerPage] = useState(5)
     const [showImportModal, setShowImportModal] = useState(false)
     const [importingTemplates, setImportingTemplates] = useState(false)
     const [dragActive, setDragActive] = useState(false)

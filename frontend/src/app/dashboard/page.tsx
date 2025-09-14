@@ -7,6 +7,27 @@ import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { appConfig } from '@/config/app-config'
 
+interface TrainRoute {
+    id: number
+    train_number: string
+    train_name: string
+    from_station_code: string
+    from_station: string
+    to_station_code: string
+    to_station: string
+    created_at: string
+    updated_at?: string
+}
+
+interface SelectedRoute {
+    train_number: string
+    train_name: string
+    from_station: string
+    to_station: string
+    platform: string
+    announcement_category: string
+}
+
 export default function DashboardPage() {
     const router = useRouter()
     const [user, setUser] = useState<any>(null)
@@ -15,6 +36,13 @@ export default function DashboardPage() {
     const [searchResults, setSearchResults] = useState<any[]>([])
     const [showProjectInfo, setShowProjectInfo] = useState(false)
     const [searchMode, setSearchMode] = useState<'number' | 'name'>('number')
+
+    // Pick Route functionality
+    const [showPickRouteModal, setShowPickRouteModal] = useState(false)
+    const [trainRoutes, setTrainRoutes] = useState<TrainRoute[]>([])
+    const [loadingRoutes, setLoadingRoutes] = useState(false)
+    const [announcementCategories, setAnnouncementCategories] = useState<string[]>([])
+    const [selectedRoute, setSelectedRoute] = useState<SelectedRoute | null>(null)
 
     useEffect(() => {
         const checkAuthentication = async () => {
@@ -62,6 +90,7 @@ export default function DashboardPage() {
         }
 
         checkAuthentication()
+        fetchAnnouncementCategories()
     }, [router])
 
     // Close dropdown when clicking outside
@@ -95,7 +124,88 @@ export default function DashboardPage() {
         router.push('/login')
     }
 
-    const handleTrainSearch = (e: React.FormEvent) => {
+    const fetchTrainRoutes = async () => {
+        try {
+            setLoadingRoutes(true)
+            const currentHost = window.location.hostname
+            const apiUrl = currentHost === 'localhost'
+                ? 'https://localhost:5001'
+                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
+
+            const response = await fetch(`${apiUrl}/api/v1/train-routes/`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+
+            if (response.ok) {
+                const routes = await response.json()
+                setTrainRoutes(routes)
+            } else {
+                toast.error('Failed to fetch train routes')
+            }
+        } catch (error) {
+            console.error('Error fetching train routes:', error)
+            toast.error('Error fetching train routes')
+        } finally {
+            setLoadingRoutes(false)
+        }
+    }
+
+    const fetchAnnouncementCategories = async () => {
+        try {
+            const currentHost = window.location.hostname
+            const apiUrl = currentHost === 'localhost'
+                ? 'https://localhost:5001'
+                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
+
+            const response = await fetch(`${apiUrl}/api/v1/announcement-templates/categories`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+
+            if (response.ok) {
+                const categories = await response.json()
+                setAnnouncementCategories(categories)
+            } else {
+                console.error('Failed to fetch announcement categories')
+            }
+        } catch (error) {
+            console.error('Error fetching announcement categories:', error)
+        }
+    }
+
+    const handlePickRouteClick = () => {
+        setShowPickRouteModal(true)
+        fetchTrainRoutes()
+    }
+
+    const handleRouteSelect = (route: TrainRoute) => {
+        setSelectedRoute({
+            train_number: route.train_number,
+            train_name: route.train_name,
+            from_station: route.from_station,
+            to_station: route.to_station,
+            platform: '1',
+            announcement_category: 'Arriving'
+        })
+        setShowPickRouteModal(false)
+        toast.success('Route selected successfully')
+    }
+
+    const handleSelectedRouteChange = (field: keyof SelectedRoute, value: string) => {
+        if (selectedRoute) {
+            setSelectedRoute({
+                ...selectedRoute,
+                [field]: value
+            })
+        }
+    }
+
+    const handleTrainSearch = async (e: React.FormEvent) => {
         e.preventDefault()
 
         if (!searchQuery.trim()) {
@@ -103,46 +213,47 @@ export default function DashboardPage() {
             return
         }
 
-        // Mock search results for demonstration
-        const mockResults = [
-            {
-                trainNumber: '12951',
-                trainName: 'MUMBAI RAJDHANI',
-                route: 'Mumbai Central → New Delhi',
-                departure: '16:35',
-                arrival: '10:15+1',
-                status: 'On Time'
-            },
-            {
-                trainNumber: '12953',
-                trainName: 'SWARNA JAYANTI RAJDHANI',
-                route: 'Mumbai Central → New Delhi',
-                departure: '16:55',
-                arrival: '10:35+1',
-                status: 'On Time'
-            },
-            {
-                trainNumber: '12955',
-                trainName: 'AUGUST KRANTI RAJDHANI',
-                route: 'Mumbai Central → New Delhi',
-                departure: '17:25',
-                arrival: '11:05+1',
-                status: 'Delayed by 15 min'
-            }
-        ].filter(train => {
-            if (searchMode === 'number') {
-                return train.trainNumber.includes(searchQuery)
+        try {
+            const currentHost = window.location.hostname
+            const apiUrl = currentHost === 'localhost'
+                ? 'https://localhost:5001'
+                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
+
+            // Search for train routes
+            const response = await fetch(`${apiUrl}/api/v1/train-routes/search?q=${encodeURIComponent(searchQuery)}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+
+            if (response.ok) {
+                const searchResults = await response.json()
+
+                if (searchResults.length === 0) {
+                    toast.error('No trains found matching your search')
+                    setSearchResults([])
+                } else {
+                    // Always show search results for user selection
+                    setSearchResults(searchResults.map(route => ({
+                        trainNumber: route.train_number,
+                        trainName: route.train_name,
+                        route: `${route.from_station} → ${route.to_station}`,
+                        departure: 'N/A',
+                        arrival: 'N/A',
+                        status: 'Available',
+                        routeData: route // Store original route data for selection
+                    })))
+                    toast.success(`Found ${searchResults.length} train(s) - please select one`)
+                }
             } else {
-                return train.trainName.toLowerCase().includes(searchQuery.toLowerCase())
+                toast.error('Failed to search for trains')
+                setSearchResults([])
             }
-        })
-
-        setSearchResults(mockResults)
-
-        if (mockResults.length === 0) {
-            toast.error('No trains found matching your search')
-        } else {
-            toast.success(`Found ${mockResults.length} train(s)`)
+        } catch (error) {
+            console.error('Error searching trains:', error)
+            toast.error('Error searching for trains')
+            setSearchResults([])
         }
     }
 
@@ -323,7 +434,7 @@ export default function DashboardPage() {
                                         }
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-colors"
+                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-colors text-black"
                                     />
                                 </div>
                                 <button
@@ -334,7 +445,11 @@ export default function DashboardPage() {
                                 </button>
                                 <button
                                     type="button"
-                                    className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors duration-200"
+                                    onClick={handlePickRouteClick}
+                                    className="px-6 py-3 text-white font-semibold rounded-lg transition-colors duration-200"
+                                    style={{ backgroundColor: '#287fb8' }}
+                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1e5f8a'}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#287fb8'}
                                 >
                                     Pick Route
                                 </button>
@@ -343,7 +458,8 @@ export default function DashboardPage() {
                                     onClick={() => {
                                         setSearchQuery('')
                                         setSearchResults([])
-                                        toast.success('Search cleared')
+                                        setSelectedRoute(null)
+                                        toast.success('Search and selected route cleared')
                                     }}
                                     className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-colors duration-200"
                                 >
@@ -354,37 +470,158 @@ export default function DashboardPage() {
                             {/* Search Results */}
                             {searchResults.length > 0 && (
                                 <div className="space-y-3">
-                                    <h3 className="text-lg font-medium text-gray-900">Search Results</h3>
-                                    {searchResults.map((train, index) => (
-                                        <div key={index} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center space-x-4">
-                                                    <div className="w-12 h-12 bg-teal-100 rounded-lg flex items-center justify-center">
-                                                        <span className="text-teal-600 font-bold text-sm">{train.trainNumber}</span>
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-lg font-medium text-gray-900">Search Results</h3>
+                                        <span className="text-sm text-gray-500">{searchResults.length} result(s) found</span>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {searchResults.map((train, index) => (
+                                            <div
+                                                key={index}
+                                                onClick={() => {
+                                                    if (train.routeData) {
+                                                        // This is from search results, use the stored route data
+                                                        setSelectedRoute({
+                                                            train_number: train.routeData.train_number,
+                                                            train_name: train.routeData.train_name,
+                                                            from_station: train.routeData.from_station,
+                                                            to_station: train.routeData.to_station,
+                                                            platform: '1',
+                                                            announcement_category: 'Arriving'
+                                                        })
+                                                        setSearchResults([])
+                                                        toast.success('Train selected!')
+                                                    }
+                                                }}
+                                                className="border border-gray-200 rounded-lg p-4 hover:bg-teal-50 hover:border-teal-300 cursor-pointer transition-all duration-200"
+                                            >
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center space-x-4">
+                                                        <div className="w-12 h-12 bg-teal-100 rounded-lg flex items-center justify-center">
+                                                            <span className="text-teal-600 font-bold text-sm">{train.trainNumber}</span>
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="font-semibold text-gray-900">{train.trainName}</h4>
+                                                            <p className="text-sm text-gray-600">{train.route}</p>
+                                                        </div>
                                                     </div>
-                                                    <div>
-                                                        <h4 className="font-semibold text-gray-900">{train.trainName}</h4>
-                                                        <p className="text-sm text-gray-600">{train.route}</p>
-                                                    </div>
-                                                </div>
-                                                <div className="text-right">
-                                                    <div className="text-sm text-gray-600">
-                                                        <span className="font-medium">Departure:</span> {train.departure}
-                                                    </div>
-                                                    <div className="text-sm text-gray-600">
-                                                        <span className="font-medium">Arrival:</span> {train.arrival}
-                                                    </div>
-                                                    <div className={`text-sm font-medium ${train.status === 'On Time' ? 'text-green-600' : 'text-orange-600'
-                                                        }`}>
-                                                        {train.status}
+                                                    <div className="text-right">
+                                                        <div className="text-sm text-gray-600">
+                                                            <span className="font-medium">Status:</span> {train.status}
+                                                        </div>
+                                                        <div className="text-xs text-teal-600 font-medium mt-1">
+                                                            Click to select
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                         </div>
+
+                        {/* Selected Route Section */}
+                        {selectedRoute && (
+                            <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm mb-8">
+                                <div className="flex items-center mb-4">
+                                    <svg className="w-6 h-6 text-teal-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                                    </svg>
+                                    <h2 className="text-xl font-semibold text-gray-900">Selected Route</h2>
+                                </div>
+
+                                <div className="overflow-x-auto">
+                                    <table className="w-full">
+                                        <thead>
+                                            <tr className="border-b border-gray-200">
+                                                <th className="text-left py-3 px-4 font-medium text-black">Train Number</th>
+                                                <th className="text-left py-3 px-4 font-medium text-black">Train Name</th>
+                                                <th className="text-left py-3 px-4 font-medium text-black">From Station</th>
+                                                <th className="text-left py-3 px-4 font-medium text-black">To Station</th>
+                                                <th className="text-left py-3 px-4 font-medium text-black">Platform</th>
+                                                <th className="text-left py-3 px-4 font-medium text-black">Announcement Category</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr className="border-b border-gray-100">
+                                                <td className="py-3 px-4">
+                                                    <span className="text-black font-medium">{selectedRoute.train_number}</span>
+                                                </td>
+                                                <td className="py-3 px-4 min-w-[200px]">
+                                                    <span className="text-black break-words">{selectedRoute.train_name}</span>
+                                                </td>
+                                                <td className="py-3 px-4 min-w-[150px]">
+                                                    <span className="text-black break-words">{selectedRoute.from_station}</span>
+                                                </td>
+                                                <td className="py-3 px-4 min-w-[150px]">
+                                                    <span className="text-black break-words">{selectedRoute.to_station}</span>
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <div className="relative w-20">
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            max="99"
+                                                            value={selectedRoute.platform}
+                                                            onChange={(e) => {
+                                                                const value = e.target.value
+                                                                // Only allow 1-2 digits, no leading zeros except for single digits
+                                                                if (value === '' || (value.length <= 2 && parseInt(value) >= 1 && parseInt(value) <= 99)) {
+                                                                    handleSelectedRouteChange('platform', value)
+                                                                }
+                                                            }}
+                                                            className="w-full px-2 py-2 pr-8 border border-gray-300 rounded-md focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-black text-center"
+                                                            style={{ color: '#000000' }}
+                                                        />
+                                                        <div className="absolute right-1 top-0 bottom-0 flex flex-col">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const currentValue = parseInt(selectedRoute.platform) || 1
+                                                                    if (currentValue < 99) {
+                                                                        handleSelectedRouteChange('platform', (currentValue + 1).toString())
+                                                                    }
+                                                                }}
+                                                                className="flex-1 flex items-center justify-center text-gray-400 hover:text-gray-600 text-xs"
+                                                            >
+                                                                ▲
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const currentValue = parseInt(selectedRoute.platform) || 1
+                                                                    if (currentValue > 1) {
+                                                                        handleSelectedRouteChange('platform', (currentValue - 1).toString())
+                                                                    }
+                                                                }}
+                                                                className="flex-1 flex items-center justify-center text-gray-400 hover:text-gray-600 text-xs"
+                                                            >
+                                                                ▼
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <select
+                                                        value={selectedRoute.announcement_category}
+                                                        onChange={(e) => handleSelectedRouteChange('announcement_category', e.target.value)}
+                                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-black"
+                                                    >
+                                                        <option value="">Select Category</option>
+                                                        {announcementCategories.map((category) => (
+                                                            <option key={category} value={category}>
+                                                                {category}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
 
                     </div>
                 </main>
@@ -474,6 +711,77 @@ export default function DashboardPage() {
                 </div>
             )}
 
+            {/* Pick Route Modal */}
+            {showPickRouteModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] overflow-hidden">
+                        <div className="p-6 border-b border-gray-200">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-xl font-semibold text-gray-900">Select Train Route</h2>
+                                    <p className="text-sm text-gray-500 mt-1">
+                                        Choose a train route from the available options
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setShowPickRouteModal(false)}
+                                    className="text-gray-400 hover:text-gray-600 text-sm font-medium"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto max-h-[60vh]">
+                            {loadingRoutes ? (
+                                <div className="flex items-center justify-center py-12">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
+                                    <span className="ml-2 text-gray-600">Loading train routes...</span>
+                                </div>
+                            ) : trainRoutes.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                                    </svg>
+                                    <p className="text-gray-500">No train routes available</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {trainRoutes.map((route) => (
+                                        <div
+                                            key={route.id}
+                                            onClick={() => handleRouteSelect(route)}
+                                            className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center space-x-4">
+                                                    <div className="w-12 h-12 bg-teal-100 rounded-lg flex items-center justify-center">
+                                                        <span className="text-teal-600 font-bold text-sm">{route.train_number}</span>
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-semibold text-gray-900">{route.train_name}</h4>
+                                                        <p className="text-sm text-gray-600">
+                                                            {route.from_station} → {route.to_station}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-sm text-gray-600">
+                                                        <span className="font-medium">From:</span> {route.from_station_code}
+                                                    </div>
+                                                    <div className="text-sm text-gray-600">
+                                                        <span className="font-medium">To:</span> {route.to_station_code}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
         </div>
     )

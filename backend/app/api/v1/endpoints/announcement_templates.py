@@ -72,6 +72,15 @@ def get_announcement_templates(
     return template_service.get_announcement_templates(skip=skip, limit=limit)
 
 
+@router.get("/categories", response_model=List[str])
+def get_announcement_categories(
+    db: Session = Depends(get_db)
+):
+    """Get all unique announcement categories"""
+    template_service = get_announcement_template_service(db)
+    return template_service.get_unique_categories()
+
+
 @router.get("/category/{category}", response_model=List[AnnouncementTemplate])
 def get_templates_by_category(
     category: str,

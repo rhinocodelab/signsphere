@@ -175,6 +175,12 @@ class AnnouncementTemplateService:
         self.db.commit()
         return count
 
+    def get_unique_categories(self) -> List[str]:
+        """Get all unique announcement categories"""
+        categories = self.db.query(
+            AnnouncementTemplate.category).distinct().all()
+        return [category[0] for category in categories]
+
 
 def get_announcement_template_service(db: Session) -> AnnouncementTemplateService:
     """Dependency to get announcement template service"""
