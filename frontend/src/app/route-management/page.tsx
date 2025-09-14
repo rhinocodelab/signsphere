@@ -994,8 +994,8 @@ export default function RouteManagementPage() {
 
             <div className="flex pt-16">
                 {/* Fixed Sidebar */}
-                <aside className="fixed left-0 top-16 bottom-0 bg-white border-r border-gray-200 w-64 z-30 overflow-y-auto">
-                    <nav className="p-4 pt-8 space-y-2">
+                <aside className="fixed left-0 top-16 bottom-0 bg-white border-r border-gray-200 w-fit min-w-64 max-w-80 z-30 overflow-y-auto">
+                    <nav className="p-4 pt-8 space-y-2 w-full">
                         {/* Dashboard */}
                         <Link href="/dashboard" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1022,6 +1022,12 @@ export default function RouteManagementPage() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                                 </svg>
                                 <span>AI Generated Assets</span>
+                            </Link>
+                            <Link href="/announcement-template" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+                                </svg>
+                                <span>Announcement Template</span>
                             </Link>
                         </div>
                     </nav>
@@ -1684,109 +1690,101 @@ export default function RouteManagementPage() {
                                 </button>
                             </div>
 
-                            <div className="space-y-8">
-                                {/* File Upload Section */}
-                                <div className="flex justify-center">
-                                    <div className="w-full max-w-md">
-                                        <h3 className="text-lg font-semibold text-gray-900 mb-4 text-center">Upload Excel File</h3>
+                            {/* File Upload Area */}
+                            <div className="mb-8">
 
-                                        {/* Drag and Drop Area - Centered and Smaller */}
-                                        <div
-                                            className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${dragActive
-                                                ? 'border-teal-500 bg-teal-50'
-                                                : 'border-gray-300 hover:border-gray-400'
-                                                }`}
-                                            onDragEnter={handleDrag}
-                                            onDragLeave={handleDrag}
-                                            onDragOver={handleDrag}
-                                            onDrop={handleDrop}
-                                        >
-                                            <svg className="mx-auto h-10 w-10 text-gray-400 mb-3" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                                            </svg>
-                                            <p className="text-base text-gray-600 mb-2">
-                                                Drag & drop your .xlsx file here
-                                            </p>
-                                            <p className="text-sm text-gray-500 mb-3">or</p>
-
-                                            <input
-                                                type="file"
-                                                accept=".xlsx"
-                                                onChange={handleFileInput}
-                                                className="hidden"
-                                                id="file-upload"
-                                            />
-                                            <label
-                                                htmlFor="file-upload"
-                                                className="inline-flex items-center px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg transition-colors cursor-pointer text-sm"
-                                            >
-                                                Browse File
-                                            </label>
-
-                                            {selectedFile && (
-                                                <div className="mt-3 p-2 bg-green-50 border border-green-200 rounded-lg">
-                                                    <div className="flex items-center justify-center">
-                                                        <svg className="h-4 w-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                        </svg>
-                                                        <span className="text-xs text-green-700 font-medium">{selectedFile.name}</span>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Action Buttons */}
-                                        <div className="flex justify-center space-x-3 mt-6">
-                                            <button
-                                                onClick={cancelImport}
-                                                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors duration-200"
-                                                disabled={importingRoutes}
-                                            >
-                                                Cancel
-                                            </button>
-                                            <button
-                                                onClick={handleImportSubmit}
-                                                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                disabled={importingRoutes || !selectedFile}
-                                            >
-                                                {importingRoutes ? 'Importing...' : 'Import Routes'}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Excel Format Example - Below the drag & drop zone */}
-                                <div>
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-4 text-center">Excel Format Example</h3>
-                                    <p className="text-sm text-gray-600 mb-4 text-center">
-                                        Your Excel file should have the following columns in the first row:
+                                {/* Drag and Drop Area - Centered and Smaller */}
+                                <div
+                                    className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${dragActive
+                                        ? 'border-teal-500 bg-teal-50'
+                                        : 'border-gray-300 hover:border-gray-400'
+                                        }`}
+                                    onDragEnter={handleDrag}
+                                    onDragLeave={handleDrag}
+                                    onDragOver={handleDrag}
+                                    onDrop={handleDrop}
+                                >
+                                    <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                                    </svg>
+                                    <h3 className="text-lg font-medium text-gray-900 mb-2">Upload Excel File</h3>
+                                    <p className="text-gray-600 mb-4">
+                                        Drag and drop your Excel file here, or click to browse
                                     </p>
 
-                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                        <div className="overflow-x-auto">
-                                            <table className="min-w-full text-sm">
-                                                <thead>
-                                                    <tr className="bg-gray-100">
-                                                        <th className="px-3 py-2 text-left font-semibold text-gray-700">Train Number</th>
-                                                        <th className="px-3 py-2 text-left font-semibold text-gray-700">Train Name</th>
-                                                        <th className="px-3 py-2 text-left font-semibold text-gray-700">From Station Code</th>
-                                                        <th className="px-3 py-2 text-left font-semibold text-gray-700">From Station</th>
-                                                        <th className="px-3 py-2 text-left font-semibold text-gray-700">To Station Code</th>
-                                                        <th className="px-3 py-2 text-left font-semibold text-gray-700">To Station</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <tr>
-                                                        <td className="px-3 py-2 border-b border-gray-200 text-black">12345</td>
-                                                        <td className="px-3 py-2 border-b border-gray-200 text-black">Mumbai Express</td>
-                                                        <td className="px-3 py-2 border-b border-gray-200 text-black">CSMT</td>
-                                                        <td className="px-3 py-2 border-b border-gray-200 text-black">Chhatrapati Shivaji Maharaj Terminus</td>
-                                                        <td className="px-3 py-2 border-b border-gray-200 text-black">PNBE</td>
-                                                        <td className="px-3 py-2 border-b border-gray-200 text-black">Patna Junction</td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
+                                    <input
+                                        type="file"
+                                        accept=".xlsx,.xls"
+                                        onChange={handleFileInput}
+                                        className="hidden"
+                                        id="file-upload"
+                                    />
+                                    <label
+                                        htmlFor="file-upload"
+                                        className="inline-flex items-center px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg transition-colors cursor-pointer"
+                                    >
+                                        Choose File
+                                    </label>
+
+                                    {selectedFile && (
+                                        <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                                            <p className="text-sm text-gray-700">
+                                                Selected: <span className="font-medium">{selectedFile.name}</span>
+                                            </p>
                                         </div>
+                                    )}
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex justify-center space-x-3 mt-6">
+                                    <button
+                                        onClick={cancelImport}
+                                        className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors duration-200"
+                                        disabled={importingRoutes}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleImportSubmit}
+                                        className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        disabled={importingRoutes || !selectedFile}
+                                    >
+                                        {importingRoutes ? 'Importing...' : 'Import Routes'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Excel Format Example */}
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4 text-center">Excel Format Example</h3>
+                                <p className="text-sm text-gray-600 mb-4 text-center">
+                                    Your Excel file should have the following columns in the first row:
+                                </p>
+
+                                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                                    <div className="overflow-x-auto">
+                                        <table className="min-w-full text-sm">
+                                            <thead>
+                                                <tr className="bg-gray-100">
+                                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">Train Number</th>
+                                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">Train Name</th>
+                                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">From Station Code</th>
+                                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">From Station</th>
+                                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">To Station Code</th>
+                                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">To Station</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td className="px-3 py-2 border-b border-gray-200 text-gray-900">12345</td>
+                                                    <td className="px-3 py-2 border-b border-gray-200 text-gray-900">Mumbai Express</td>
+                                                    <td className="px-3 py-2 border-b border-gray-200 text-gray-900">CSMT</td>
+                                                    <td className="px-3 py-2 border-b border-gray-200 text-gray-900">Chhatrapati Shivaji Maharaj Terminus</td>
+                                                    <td className="px-3 py-2 border-b border-gray-200 text-gray-900">PNBE</td>
+                                                    <td className="px-3 py-2 border-b border-gray-200 text-gray-900">Patna Junction</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </div>
                             </div>

@@ -4,6 +4,8 @@ from app.models.user import User
 from app.models.train_route import TrainRoute  # Import to ensure table creation
 # Import to ensure table creation
 from app.models.train_route_translation import TrainRouteTranslation
+# Import to ensure table creation
+from app.models.announcement_template import AnnouncementTemplate
 from app.db.base_class import Base
 from app.db.session import engine
 
