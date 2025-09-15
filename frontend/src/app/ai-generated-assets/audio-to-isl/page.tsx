@@ -71,6 +71,11 @@ export default function AudioToISLPage() {
 
         setSelectedFile(file)
         setResult(null)
+        
+        // Automatically start language detection with the file directly
+        setTimeout(() => {
+            handleDetectLanguageWithFile(file)
+        }, 500) // Small delay to show file selection first
     }
 
     const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -101,23 +106,44 @@ export default function AudioToISLPage() {
         }
     }
 
-    const handleDetectLanguage = async () => {
-        if (!selectedFile) {
-            toast.error('Please select an audio file')
-            return
-        }
-
+    const handleDetectLanguageWithFile = async (file: File) => {
         setDetecting(true)
         setResult(null)
+        setShowProgressModal(true)
+        setProgress({
+            step: 'Starting language detection...',
+            progress: 0,
+            isComplete: false,
+            error: null
+        })
 
         try {
+            // Simulate progress steps
+            const progressSteps = [
+                { step: 'Uploading audio file...', progress: 20 },
+                { step: 'Processing audio content...', progress: 40 },
+                { step: 'Analyzing speech patterns...', progress: 60 },
+                { step: 'Detecting language...', progress: 80 },
+                { step: 'Finalizing results...', progress: 95 }
+            ]
+
+            // Simulate progress
+            for (const step of progressSteps) {
+                setProgress(prev => ({
+                    ...prev,
+                    step: step.step,
+                    progress: step.progress
+                }))
+                await new Promise(resolve => setTimeout(resolve, 800))
+            }
+
             const currentHost = window.location.hostname
             const apiUrl = currentHost === 'localhost'
                 ? 'https://localhost:5001'
                 : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
 
             const formData = new FormData()
-            formData.append('file', selectedFile)
+            formData.append('file', file)
 
             const response = await fetch(`${apiUrl}/api/v1/language-detection/detect-language`, {
                 method: 'POST',
@@ -127,17 +153,49 @@ export default function AudioToISLPage() {
             if (response.ok) {
                 const result = await response.json()
                 setResult(result)
+                
+                // Complete progress
+                setProgress(prev => ({
+                    ...prev,
+                    step: 'Language detected successfully!',
+                    progress: 100,
+                    isComplete: true
+                }))
+
+                // Wait a moment to show completion
+                await new Promise(resolve => setTimeout(resolve, 1500))
+
+                // Close modal
+                setShowProgressModal(false)
                 toast.success('Language detected successfully!')
             } else {
                 const error = await response.json()
+                setProgress(prev => ({
+                    ...prev,
+                    step: 'Language detection failed',
+                    error: error.detail || 'Language detection failed'
+                }))
                 toast.error(error.detail || 'Language detection failed')
             }
         } catch (error) {
             console.error('Detection error:', error)
+            setProgress(prev => ({
+                ...prev,
+                step: 'Network error occurred',
+                error: 'Network error occurred'
+            }))
             toast.error('Network error occurred')
         } finally {
             setDetecting(false)
         }
+    }
+
+    const handleDetectLanguage = async () => {
+        if (!selectedFile) {
+            toast.error('Please select an audio file')
+            return
+        }
+        await handleDetectLanguageWithFile(selectedFile)
     }
 
     const handleGenerateISL = async () => {
@@ -355,147 +413,164 @@ export default function AudioToISLPage() {
                         {/* Main Content Card */}
                         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
                             <div className="p-6">
-                            {/* File Upload Section */}
-                            <div className="mb-8">
-                                <h2 className="text-lg font-semibold text-gray-900 mb-4">Step 1: Upload Audio File</h2>
-                                <div
-                                    className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                                        dragActive
-                                            ? 'border-teal-500 bg-teal-50'
-                                            : 'border-gray-300 hover:border-gray-400'
-                                    }`}
-                                    onDragEnter={handleDrag}
-                                    onDragLeave={handleDrag}
-                                    onDragOver={handleDrag}
-                                    onDrop={handleDrop}
-                                >
-                                    {selectedFile ? (
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-center">
-                                                <svg className="w-12 h-12 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                </svg>
-                                            </div>
-                                            <div>
-                                                <p className="text-lg font-medium text-gray-900">{selectedFile.name}</p>
-                                                <p className="text-sm text-gray-500">{formatFileSize(selectedFile.size)}</p>
-                                            </div>
+                                {/* Two Panel Layout */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                    
+                                    {/* Left Panel - Audio Upload */}
+                                    <div className="space-y-6">
+                                        <div>
+                                            <h2 className="text-xl font-semibold text-gray-900 mb-2">Audio Input</h2>
+                                            <p className="text-sm text-gray-600">Upload your audio file to convert to ISL video</p>
+                                        </div>
+                                        
+                                        {/* Audio Drop Zone */}
+                                        <div
+                                            className={`border-2 border-dashed rounded-xl p-6 text-center transition-all duration-200 ${
+                                                dragActive
+                                                    ? 'border-teal-500 bg-teal-50 scale-105'
+                                                    : 'border-gray-300 hover:border-teal-400 hover:bg-gray-50'
+                                            }`}
+                                            onDragEnter={handleDrag}
+                                            onDragLeave={handleDrag}
+                                            onDragOver={handleDrag}
+                                            onDrop={handleDrop}
+                                        >
+                                            {selectedFile ? (
+                                                <div className="space-y-4">
+                                                    <div className="flex items-center justify-center">
+                                                        <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center">
+                                                            <svg className="w-8 h-8 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-lg font-medium text-gray-900">{selectedFile.name}</p>
+                                                        <p className="text-sm text-gray-500">{formatFileSize(selectedFile.size)}</p>
+                                                    </div>
+                                                    
+                                                    {/* Language Detection Result */}
+                                                    {result && (
+                                                        <div className="text-xs text-green-600 font-medium">
+                                                            Language Detected: {result.detected_language}
+                                                        </div>
+                                                    )}
+                                                    
+                                                    <button
+                                                        onClick={() => setSelectedFile(null)}
+                                                        className="text-sm text-red-600 hover:text-red-800 font-medium"
+                                                    >
+                                                        Remove file
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    <div className="flex items-center justify-center">
+                                                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
+                                                            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                                            </svg>
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-lg font-medium text-gray-900">Drop your audio file here</p>
+                                                        <p className="text-sm text-gray-500">or click to browse</p>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => fileInputRef.current?.click()}
+                                                        className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm"
+                                                    >
+                                                        Choose Audio File
+                                                    </button>
+                                                    
+                                                    {/* Supported Formats Info */}
+                                                    <div className="text-xs text-gray-500 space-y-1">
+                                                        <p className="font-medium">Supported formats:</p>
+                                                        <p>WAV • MP3 • AIFF • AAC • OGG Vorbis • FLAC</p>
+                                                        <p>Maximum file size: 10MB</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            <input
+                                                ref={fileInputRef}
+                                                type="file"
+                                                accept=".wav,.mp3,.aiff,.aac,.ogg,.flac,audio/*"
+                                                onChange={handleFileInputChange}
+                                                className="hidden"
+                                            />
+                                        </div>
+
+
+                                        {/* Action Button */}
+                                        <div className="space-y-3">
                                             <button
-                                                onClick={() => setSelectedFile(null)}
-                                                className="text-sm text-red-600 hover:text-red-800"
+                                                onClick={handleGenerateISL}
+                                                disabled={!selectedFile || !result || generating}
+                                                className={`w-full px-4 py-3 rounded-lg font-medium transition-colors ${
+                                                    !selectedFile || !result || generating
+                                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                        : 'bg-teal-600 text-white hover:bg-teal-700'
+                                                }`}
                                             >
-                                                Remove file
+                                                {generating ? 'Generating ISL Video...' : 'Generate ISL Video'}
                                             </button>
                                         </div>
-                                    ) : (
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-center">
-                                                <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                                </svg>
-                                            </div>
-                                            <div>
-                                                <p className="text-lg font-medium text-gray-900">Drop your audio file here</p>
-                                                <p className="text-sm text-gray-500">or click to browse</p>
-                                            </div>
-                                            <button
-                                                onClick={() => fileInputRef.current?.click()}
-                                                className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"
-                                            >
-                                                Choose File
-                                            </button>
-                                        </div>
-                                    )}
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        accept=".wav,.mp3,.aiff,.aac,.ogg,.flac,audio/*"
-                                        onChange={handleFileInputChange}
-                                        className="hidden"
-                                    />
-                                </div>
 
-                                {/* Supported Formats */}
-                                <div className="mt-4">
-                                    <p className="text-sm text-gray-600 mb-2">Supported formats:</p>
-                                    <div className="flex flex-wrap gap-2">
-                                        {supportedFormats.map((format, index) => (
-                                            <div key={index} className="flex items-center text-xs text-gray-500">
-                                                <span className="w-2 h-2 bg-indigo-500 rounded-full mr-2"></span>
-                                                {format.name} ({format.extension})
-                                            </div>
-                                        ))}
                                     </div>
-                                    <p className="text-xs text-gray-500 mt-3">
-                                        Maximum file size: 10MB
-                                    </p>
-                                </div>
-                            </div>
 
-                            {/* Language Detection Section */}
-                            <div className="mb-8">
-                                <h2 className="text-lg font-semibold text-gray-900 mb-4">Step 2: Detect Language</h2>
-                                <div className="flex items-center space-x-4">
-                                    <button
-                                        onClick={handleDetectLanguage}
-                                        disabled={!selectedFile || detecting}
-                                        className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-                                            !selectedFile || detecting
-                                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                                : 'bg-blue-600 text-white hover:bg-blue-700'
-                                        }`}
-                                    >
-                                        {detecting ? 'Detecting...' : 'Detect Language'}
-                                    </button>
-                                    {detecting && (
-                                        <div className="flex items-center text-sm text-gray-600">
-                                            <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                            </svg>
-                                            Analyzing audio...
+                                    {/* Right Panel - ISL Video Player */}
+                                    <div className="space-y-6">
+                                        <div>
+                                            <h2 className="text-xl font-semibold text-gray-900 mb-2">ISL Video Output</h2>
+                                            <p className="text-sm text-gray-600">Generated Indian Sign Language video will appear here</p>
                                         </div>
-                                    )}
-                                </div>
+                                        
+                                        {/* Video Player Area */}
+                                        <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
+                                            <div className="space-y-4">
+                                                <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mx-auto">
+                                                    <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                    </svg>
+                                                </div>
+                                                <div>
+                                                    <p className="text-lg font-medium text-gray-900">No ISL Video Generated</p>
+                                                    <p className="text-sm text-gray-500">Upload an audio file and click "Generate ISL Video" to create your sign language video</p>
+                                                </div>
+                                            </div>
+                                        </div>
 
-                                {result && (
-                                    <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-                                        <h3 className="text-sm font-medium text-green-800 mb-2">Language Detection Result</h3>
-                                        <div className="space-y-1 text-sm text-green-700">
-                                            <p><strong>File:</strong> {result.filename}</p>
-                                            <p><strong>Size:</strong> {formatFileSize(result.file_size)}</p>
-                                            <p><strong>Detected Language:</strong> {result.detected_language}</p>
+                                        {/* Video Controls Placeholder */}
+                                        <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center space-x-4">
+                                                    <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                                                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                                            <path d="M8 5v14l11-7z"/>
+                                                        </svg>
+                                                    </button>
+                                                    <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                                                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                                            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                                <div className="flex items-center space-x-2">
+                                                    <span className="text-sm text-gray-500">00:00</span>
+                                                    <div className="w-32 h-1 bg-gray-200 rounded-full"></div>
+                                                    <span className="text-sm text-gray-500">00:00</span>
+                                                </div>
+                                                <div className="flex items-center space-x-2">
+                                                    <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                )}
-                            </div>
-
-                            {/* ISL Generation Section */}
-                            <div className="mb-8">
-                                <h2 className="text-lg font-semibold text-gray-900 mb-4">Step 3: Generate ISL Video</h2>
-                                <div className="flex items-center space-x-4">
-                                    <button
-                                        onClick={handleGenerateISL}
-                                        disabled={!selectedFile || !result || generating}
-                                        className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-                                            !selectedFile || !result || generating
-                                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                                : 'bg-teal-600 text-white hover:bg-teal-700'
-                                        }`}
-                                    >
-                                        {generating ? 'Generating...' : 'Generate ISL Video'}
-                                    </button>
-                                    {generating && (
-                                        <div className="flex items-center text-sm text-gray-600">
-                                            <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-teal-600" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                            </svg>
-                                            Creating ISL video...
-                                        </div>
-                                    )}
                                 </div>
-                            </div>
                             </div>
                         </div>
                     </div>
@@ -507,7 +582,9 @@ export default function AudioToISLPage() {
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
                         <div className="text-center">
-                            <h3 className="text-lg font-semibold text-gray-900 mb-4">Generating ISL Video</h3>
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                                {detecting ? 'Detecting Language' : 'Generating ISL Video'}
+                            </h3>
                             
                             {/* Progress Bar */}
                             <div className="mb-4">
@@ -518,7 +595,9 @@ export default function AudioToISLPage() {
                                                 ? 'bg-green-500'
                                                 : progress.error
                                                     ? 'bg-red-500'
-                                                    : 'bg-teal-500'
+                                                    : detecting
+                                                        ? 'bg-blue-500'
+                                                        : 'bg-teal-500'
                                         }`}
                                         style={{ width: `${progress.progress}%` }}
                                     ></div>
