@@ -147,24 +147,80 @@ fi
 
 print_success "HTTPS configuration found"
 
-# Check if virtual environment exists
+# Check if virtual environment exists and create if needed
 if [ ! -d "$BACKEND_DIR/venv" ]; then
-    print_error "Backend virtual environment not found!"
-    print_status "Please set up the backend first:"
-    echo "  cd backend"
-    echo "  python3 -m venv venv"
-    echo "  source venv/bin/activate"
-    echo "  pip install -r requirements.txt"
-    exit 1
+    print_warning "Backend virtual environment not found!"
+    print_status "Creating virtual environment..."
+    cd "$BACKEND_DIR"
+    python3 -m venv venv
+    if [ $? -ne 0 ]; then
+        print_error "Failed to create virtual environment!"
+        exit 1
+    fi
+    print_success "Virtual environment created"
+    
+    print_status "Installing Python dependencies..."
+    source venv/bin/activate
+    pip install --upgrade pip
+    pip install -r requirements.txt
+    if [ $? -ne 0 ]; then
+        print_error "Failed to install Python dependencies!"
+        exit 1
+    fi
+    print_success "Python dependencies installed"
+else
+    print_success "Backend virtual environment found"
+    
+    # Check if requirements are installed
+    cd "$BACKEND_DIR"
+    source venv/bin/activate
+    if ! python -c "import fastapi, sqlalchemy, passlib" 2>/dev/null; then
+        print_warning "Some Python dependencies appear to be missing!"
+        print_status "Installing/updating Python dependencies..."
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        if [ $? -ne 0 ]; then
+            print_error "Failed to install Python dependencies!"
+            exit 1
+        fi
+        print_success "Python dependencies installed/updated"
+    else
+        print_success "Python dependencies verified"
+    fi
 fi
 
-# Check if frontend dependencies are installed
+# Check if frontend dependencies are installed and install if needed
 if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
-    print_error "Frontend dependencies not installed!"
-    print_status "Please install frontend dependencies first:"
-    echo "  cd frontend"
-    echo "  npm install"
-    exit 1
+    print_warning "Frontend dependencies not installed!"
+    print_status "Installing frontend dependencies..."
+    cd "$FRONTEND_DIR"
+    npm install
+    if [ $? -ne 0 ]; then
+        print_error "Failed to install frontend dependencies!"
+        exit 1
+    fi
+    print_success "Frontend dependencies installed"
+else
+    print_success "Frontend dependencies found"
+fi
+
+# Initialize database if needed
+print_status "=== Checking Database ==="
+cd "$BACKEND_DIR"
+source venv/bin/activate
+
+# Check if database exists and has tables
+if ! python -c "from app.db.session import engine; from sqlalchemy import inspect; inspector = inspect(engine); tables = inspector.get_table_names(); exit(0 if 'users' in tables else 1)" 2>/dev/null; then
+    print_warning "Database not initialized or missing tables!"
+    print_status "Initializing database..."
+    python -m app.db.init_db
+    if [ $? -ne 0 ]; then
+        print_error "Failed to initialize database!"
+        exit 1
+    fi
+    print_success "Database initialized successfully"
+else
+    print_success "Database verified"
 fi
 
 echo ""

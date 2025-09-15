@@ -154,14 +154,14 @@ export default function LoginPage() {
       {/* Main Content */}
       <main className="flex flex-1 pb-16 items-center justify-center p-4">
         {/* Centered Card with Shadow */}
-        <div className="w-full max-w-6xl bg-white shadow-2xl overflow-hidden">
-          <div className="flex flex-col lg:flex-row min-h-[600px]">
+        <div className="w-full max-w-4xl bg-white shadow-2xl overflow-hidden">
+          <div className="flex flex-col lg:flex-row min-h-[500px]">
             {/* Left Panel - Branding */}
-            <div className="lg:w-1/2 flex flex-col justify-center items-center p-8 lg:p-12 bg-gradient-to-br from-teal-50 to-blue-50">
+            <div className="lg:w-1/2 flex flex-col justify-center items-center p-6 lg:p-8 bg-gradient-to-br from-teal-50 to-blue-50">
               <div className="max-w-lg mx-auto text-center flex flex-col justify-center items-center">
                 {/* Dynamic Image */}
                 <div className="mb-6">
-                  <div className="relative w-64 h-64 lg:w-80 lg:h-80 mx-auto flex items-center justify-center">
+                  <div className="relative w-48 h-48 lg:w-64 lg:h-64 mx-auto flex items-center justify-center">
                     <Image
                       src={imageConfig.path}
                       alt={imageConfig.alt}
@@ -199,16 +199,16 @@ export default function LoginPage() {
             </div>
 
             {/* Right Panel - Login Form */}
-            <div className="lg:w-1/2 flex items-center justify-center p-8 lg:p-12">
-              <div className="w-full max-w-md flex flex-col justify-center">
-                <h2 className="text-2xl font-semibold text-gray-900 mb-8">
+            <div className="lg:w-1/2 flex items-center justify-center p-6 lg:p-8">
+              <div className="w-full max-w-sm flex flex-col justify-center">
+                <h2 className="text-xl font-semibold text-gray-900 mb-6">
                   {appConfig.login.rightPanel.title}
                 </h2>
 
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <form onSubmit={handleSubmit} className="space-y-4">
                   {/* Username Field */}
                   <div>
-                    <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor="username" className="block text-xs font-medium text-gray-700 mb-2">
                       {appConfig.login.rightPanel.usernameLabel}
                     </label>
                     <input
@@ -218,14 +218,14 @@ export default function LoginPage() {
                       placeholder={appConfig.login.rightPanel.usernamePlaceholder}
                       value={formData.username}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-colors text-black"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-colors text-black text-sm"
                       required
                     />
                   </div>
 
                   {/* Password Field */}
                   <div>
-                    <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor="password" className="block text-xs font-medium text-gray-700 mb-2">
                       {appConfig.login.rightPanel.passwordLabel}
                     </label>
                     <div className="relative">
@@ -236,7 +236,7 @@ export default function LoginPage() {
                         placeholder={appConfig.login.rightPanel.passwordPlaceholder}
                         value={formData.password}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-colors text-black"
+                        className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-colors text-black text-sm"
                         required
                       />
                       <button
@@ -267,7 +267,7 @@ export default function LoginPage() {
                       onChange={(e) => setKeepLoggedIn(e.target.checked)}
                       className="w-4 h-4 text-teal-600 bg-gray-100 border-gray-300 rounded focus:ring-teal-500 focus:ring-2"
                     />
-                    <label htmlFor="keepLoggedIn" className="ml-2 text-sm text-gray-700">
+                    <label htmlFor="keepLoggedIn" className="ml-2 text-xs text-gray-700">
                       {appConfig.login.rightPanel.keepLoggedInText}
                     </label>
                   </div>
@@ -275,7 +275,7 @@ export default function LoginPage() {
                   {/* Login Button */}
                   <button
                     type="submit"
-                    className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
+                    className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 text-sm"
                   >
                     {appConfig.login.rightPanel.loginButtonText}
                   </button>
