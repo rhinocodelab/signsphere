@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # Redis (optional)
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
 
+    # Google Gemini API
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+
     class Config:
         case_sensitive = True
         env_file = ".env"

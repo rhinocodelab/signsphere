@@ -11,5 +11,6 @@ pytest
 pytest-asyncio
 httpx
 google-cloud-translate
+google-generativeai
 pandas
 openpyxl
