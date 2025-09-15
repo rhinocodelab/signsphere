@@ -41,6 +41,10 @@ class Settings(BaseSettings):
 
     # Google Gemini API
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    
+    # Google Cloud Platform
+    GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", None)
+    GCP_PROJECT_ID: Optional[str] = os.getenv("GCP_PROJECT_ID", None)
 
     class Config:
         case_sensitive = True

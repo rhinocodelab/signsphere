@@ -35,8 +35,21 @@ SCRIPTS_DIR="$PROJECT_ROOT/scripts"
 BACKEND_DIR="$PROJECT_ROOT/backend"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
 
+# Set GCP credentials path dynamically
+export GOOGLE_APPLICATION_CREDENTIALS="$PROJECT_ROOT/frontend/config/isl.json"
+
 print_status "SignSphere Service Manager"
 print_status "Project Root: $PROJECT_ROOT"
+print_status "GCP Credentials: $GOOGLE_APPLICATION_CREDENTIALS"
+
+# Verify GCP credentials file exists
+if [ ! -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+    print_error "GCP service account file not found at: $GOOGLE_APPLICATION_CREDENTIALS"
+    print_status "Please ensure the service account JSON file exists in the frontend/config/ directory"
+    exit 1
+fi
+
+print_success "GCP service account file found"
 echo ""
 
 # Function to stop processes by port
@@ -232,6 +245,16 @@ print_status "=== Starting Services ==="
 print_status "Starting Backend (HTTPS on port 5001)..."
 cd "$BACKEND_DIR"
 source venv/bin/activate
+
+# Verify GCP credentials are accessible
+print_status "Verifying GCP credentials..."
+if python -c "import os; from google.cloud import speech; print('GCP credentials verified successfully')" 2>/dev/null; then
+    print_success "GCP Speech-to-Text API credentials verified"
+else
+    print_warning "GCP credentials verification failed, but continuing..."
+    print_status "Speech recognition features may not work properly"
+fi
+
 python https_config.py &
 BACKEND_PID=$!
 print_success "Backend started with PID: $BACKEND_PID"

@@ -14,6 +14,29 @@ interface LanguageDetectionResult {
     detected_language: string
 }
 
+interface SpeechRecognitionResult {
+    success: boolean
+    transcript: string
+    confidence: number
+    language_code: string
+    duration: number
+    word_count: number
+    word_time_offsets?: Array<{
+        word: string
+        start_time: number
+        end_time: number
+    }>
+    cached: boolean
+    audio_info?: {
+        sample_rate: number
+        duration: number
+        file_extension: string
+        encoding: string
+        channels: number
+        file_size: number
+    }
+}
+
 export default function AudioToISLPage() {
     const router = useRouter()
     const [user, setUser] = useState<any>(null)
@@ -22,6 +45,8 @@ export default function AudioToISLPage() {
     const [detecting, setDetecting] = useState(false)
     const [generating, setGenerating] = useState(false)
     const [result, setResult] = useState<LanguageDetectionResult | null>(null)
+    const [transcriptResult, setTranscriptResult] = useState<SpeechRecognitionResult | null>(null)
+    const [transcribing, setTranscribing] = useState(false)
     const [dragActive, setDragActive] = useState(false)
     const [showProgressModal, setShowProgressModal] = useState(false)
     const [progress, setProgress] = useState({
@@ -32,6 +57,106 @@ export default function AudioToISLPage() {
     })
 
     const fileInputRef = useRef<HTMLInputElement>(null)
+
+    // Language name to code mapping (English + Native Scripts)
+    const languageMapping: { [key: string]: string } = {
+        // English variations
+        'english': 'en-IN',
+        'english (india)': 'en-IN',
+        'english (indian)': 'en-IN',
+        'inglish': 'en-IN',
+        'angrezi': 'en-IN',
+        'english language': 'en-IN',
+        'indian english': 'en-IN',
+        'hindi english': 'en-IN',
+        
+        // Hindi variations (English + Devanagari)
+        'hindi': 'hi-IN',
+        'hindi (india)': 'hi-IN',
+        'hindustani': 'hi-IN',
+        'khari boli': 'hi-IN',
+        'devanagari': 'hi-IN',
+        'hindi language': 'hi-IN',
+        'standard hindi': 'hi-IN',
+        'modern hindi': 'hi-IN',
+        'हिन्दी': 'hi-IN',
+        'हिंदी': 'hi-IN',
+        'हिन्दी (भारत)': 'hi-IN',
+        'हिंदी (भारत)': 'hi-IN',
+        'हिन्दी भाषा': 'hi-IN',
+        'हिंदी भाषा': 'hi-IN',
+        
+        // Marathi variations (English + Devanagari)
+        'marathi': 'mr-IN',
+        'marathi (india)': 'mr-IN',
+        'maharashtrian': 'mr-IN',
+        'marathi language': 'mr-IN',
+        'maharashtra': 'mr-IN',
+        'marathi (maharashtra)': 'mr-IN',
+        'मराठी': 'mr-IN',
+        'मराठी (भारत)': 'mr-IN',
+        'मराठी (महाराष्ट्र)': 'mr-IN',
+        'मराठी भाषा': 'mr-IN',
+        
+        // Gujarati variations (English + Gujarati Script + Devanagari Script)
+        'gujarati': 'gu-IN',
+        'gujarati (india)': 'gu-IN',
+        'gujrati': 'gu-IN',
+        'gujrati (india)': 'gu-IN',
+        'gujarati language': 'gu-IN',
+        'gujrati language': 'gu-IN',
+        'gujarat': 'gu-IN',
+        'gujarati (gujarat)': 'gu-IN',
+        'gujrati (gujarat)': 'gu-IN',
+        // Gujarati in Gujarati script
+        'ગુજરાતી': 'gu-IN',
+        'ગુજરાતી (ભારત)': 'gu-IN',
+        'ગુજરાતી (ગુજરાત)': 'gu-IN',
+        'ગુજરાતી ભાષા': 'gu-IN',
+        // Gujarati in Devanagari script (common in language detection APIs)
+        'गुजराती': 'gu-IN',
+        'गुजराती (भारत)': 'gu-IN',
+        'गुजराती (गुजरात)': 'gu-IN',
+        'गुजराती भाषा': 'gu-IN'
+    }
+
+    // Function to map detected language name to language code
+    const mapLanguageNameToCode = (detectedLanguage: string): string | null => {
+        if (!detectedLanguage) return null
+        
+        // Normalize the detected language (lowercase, trim, Unicode normalization)
+        const normalizedLanguage = detectedLanguage.toLowerCase().trim().normalize('NFC')
+        
+        // Direct mapping
+        if (languageMapping[normalizedLanguage]) {
+            return languageMapping[normalizedLanguage]
+        }
+        
+        // Try with different Unicode normalization forms
+        const nfdForm = detectedLanguage.toLowerCase().trim().normalize('NFD')
+        if (languageMapping[nfdForm]) {
+            return languageMapping[nfdForm]
+        }
+        
+        // Partial matching for more flexible detection
+        for (const [key, code] of Object.entries(languageMapping)) {
+            const normalizedKey = key.normalize('NFC')
+            if (normalizedLanguage.includes(normalizedKey) || normalizedKey.includes(normalizedLanguage)) {
+                return code
+            }
+        }
+        
+        // Additional partial matching with NFD form
+        for (const [key, code] of Object.entries(languageMapping)) {
+            const normalizedKey = key.normalize('NFD')
+            if (nfdForm.includes(normalizedKey) || normalizedKey.includes(nfdForm)) {
+                return code
+            }
+        }
+        
+        // If no mapping found, return null
+        return null
+    }
 
     useEffect(() => {
         const checkAuthentication = async () => {
@@ -71,6 +196,7 @@ export default function AudioToISLPage() {
 
         setSelectedFile(file)
         setResult(null)
+        setTranscriptResult(null)
         
         // Automatically start language detection with the file directly
         setTimeout(() => {
@@ -165,9 +291,33 @@ export default function AudioToISLPage() {
                 // Wait a moment to show completion
                 await new Promise(resolve => setTimeout(resolve, 1500))
 
-                // Close modal
-                setShowProgressModal(false)
-                toast.success('Language detected successfully!')
+                // Only proceed with speech recognition if language detection was successful
+                if (result && result.detected_language) {
+                    console.log(`Language detection successful: ${result.detected_language}`)
+                    
+                    // Map detected language name to language code
+                    const languageCode = mapLanguageNameToCode(result.detected_language)
+                    
+                    if (languageCode) {
+                        console.log(`✅ Mapped "${result.detected_language}" to language code: ${languageCode}`)
+                        // Continue with speech recognition in the same modal (don't close modal yet)
+                        setTimeout(() => {
+                            handleSpeechRecognitionInModal(file, languageCode)
+                        }, 1000)
+                    } else {
+                        console.log(`❌ No language code mapping found for: "${result.detected_language}"`)
+                        console.log(`Available mappings:`, Object.keys(languageMapping))
+                        // Close modal and show error
+                        setShowProgressModal(false)
+                        toast.error(`Unsupported language detected: ${result.detected_language}. Supported languages: English, Hindi, Marathi, Gujarati`)
+                    }
+                } else {
+                    console.log('Language detection result is invalid, skipping speech recognition')
+                    // Close modal and show error
+                    setShowProgressModal(false)
+                    toast.error('Language detection result is invalid')
+                }
+                
             } else {
                 const error = await response.json()
                 setProgress(prev => ({
@@ -176,6 +326,9 @@ export default function AudioToISLPage() {
                     error: error.detail || 'Language detection failed'
                 }))
                 toast.error(error.detail || 'Language detection failed')
+                
+                // Do NOT proceed with speech recognition if language detection failed
+                console.log('Language detection failed, skipping speech recognition')
             }
         } catch (error) {
             console.error('Detection error:', error)
@@ -187,6 +340,108 @@ export default function AudioToISLPage() {
             toast.error('Network error occurred')
         } finally {
             setDetecting(false)
+        }
+    }
+
+    const handleSpeechRecognitionInModal = async (file: File, languageCode: string) => {
+        // Validate that we have a valid language code before proceeding
+        if (!languageCode || languageCode.trim() === '') {
+            toast.error('Invalid language code for speech recognition')
+            return
+        }
+
+        // Validate that the language code is one of our supported languages
+        const supportedLanguages = ['en-IN', 'hi-IN', 'mr-IN', 'gu-IN']
+        if (!supportedLanguages.includes(languageCode)) {
+            console.log(`Unsupported language code: ${languageCode}. Supported: ${supportedLanguages.join(', ')}`)
+            toast.error(`Unsupported language code: ${languageCode}. Supported: ${supportedLanguages.join(', ')}`)
+            return
+        }
+
+        console.log(`Starting speech recognition for language: ${languageCode}`)
+
+        setTranscribing(true)
+        setShowProgressModal(true)
+        setProgress({
+            step: 'Starting speech recognition...',
+            progress: 0,
+            isComplete: false,
+            error: null
+        })
+
+        try {
+            // Simulate progress steps
+            const progressSteps = [
+                { step: 'Preprocessing audio file...', progress: 20 },
+                { step: 'Uploading to speech recognition service...', progress: 40 },
+                { step: 'Processing speech patterns...', progress: 60 },
+                { step: 'Transcribing audio to text...', progress: 80 },
+                { step: 'Finalizing transcription...', progress: 95 }
+            ]
+
+            // Simulate progress
+            for (const step of progressSteps) {
+                setProgress(prev => ({
+                    ...prev,
+                    step: step.step,
+                    progress: step.progress
+                }))
+                await new Promise(resolve => setTimeout(resolve, 800))
+            }
+
+            const currentHost = window.location.hostname
+            const apiUrl = currentHost === 'localhost'
+                ? 'https://localhost:5001'
+                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
+
+            const formData = new FormData()
+            formData.append('file', file)
+            formData.append('language_code', languageCode)
+            formData.append('enable_automatic_punctuation', 'true')
+            formData.append('enable_word_time_offsets', 'true')
+
+            const response = await fetch(`${apiUrl}/api/v1/speech-recognition/transcribe`, {
+                method: 'POST',
+                body: formData
+            })
+
+            if (response.ok) {
+                const transcriptResult = await response.json()
+                setTranscriptResult(transcriptResult)
+                
+                // Complete progress
+                setProgress(prev => ({
+                    ...prev,
+                    step: 'Speech recognition completed successfully!',
+                    progress: 100,
+                    isComplete: true
+                }))
+
+                // Wait a moment to show completion
+                await new Promise(resolve => setTimeout(resolve, 1500))
+
+                // Close modal
+                setShowProgressModal(false)
+                toast.success('Audio transcribed successfully!')
+            } else {
+                const error = await response.json()
+                setProgress(prev => ({
+                    ...prev,
+                    step: 'Speech recognition failed',
+                    error: error.detail || 'Speech recognition failed'
+                }))
+                toast.error(error.detail || 'Speech recognition failed')
+            }
+        } catch (error) {
+            console.error('Speech recognition error:', error)
+            setProgress(prev => ({
+                ...prev,
+                step: 'Network error occurred',
+                error: 'Network error occurred'
+            }))
+            toast.error('Network error occurred')
+        } finally {
+            setTranscribing(false)
         }
     }
 
@@ -453,11 +708,19 @@ export default function AudioToISLPage() {
                                                     {result && (
                                                         <div className="text-xs text-green-600 font-medium">
                                                             Language Detected: {result.detected_language}
+                                                            {(() => {
+                                                                const languageCode = mapLanguageNameToCode(result.detected_language)
+                                                                return languageCode ? ` (${languageCode})` : ' (Unsupported)'
+                                                            })()}
                                                         </div>
                                                     )}
                                                     
                                                     <button
-                                                        onClick={() => setSelectedFile(null)}
+                                                        onClick={() => {
+                                                            setSelectedFile(null)
+                                                            setResult(null)
+                                                            setTranscriptResult(null)
+                                                        }}
                                                         className="text-sm text-red-600 hover:text-red-800 font-medium"
                                                     >
                                                         Remove file
@@ -500,14 +763,31 @@ export default function AudioToISLPage() {
                                             />
                                         </div>
 
+                                        {/* Transcribed Text Area */}
+                                        {transcriptResult && (
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Transcribed Text</h3>
+                                                </div>
+                                                
+                                                <div className="space-y-2">
+                                                    <textarea
+                                                        value={transcriptResult.transcript}
+                                                        readOnly
+                                                        className="w-full h-32 px-3 py-2 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-gray-50 text-gray-700"
+                                                        placeholder="Transcribed text will appear here..."
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
 
                                         {/* Action Button */}
                                         <div className="space-y-3">
                                             <button
                                                 onClick={handleGenerateISL}
-                                                disabled={!selectedFile || !result || generating}
+                                                disabled={!selectedFile || !result || !transcriptResult || generating}
                                                 className={`w-full px-4 py-3 rounded-lg font-medium transition-colors ${
-                                                    !selectedFile || !result || generating
+                                                    !selectedFile || !result || !transcriptResult || generating
                                                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                         : 'bg-teal-600 text-white hover:bg-teal-700'
                                                 }`}
@@ -583,7 +863,7 @@ export default function AudioToISLPage() {
                     <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
                         <div className="text-center">
                             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                                {detecting ? 'Detecting Language' : 'Generating ISL Video'}
+                                {detecting ? 'Detecting Language' : transcribing ? 'Transcribing Audio' : 'Generating ISL Video'}
                             </h3>
                             
                             {/* Progress Bar */}
@@ -597,7 +877,9 @@ export default function AudioToISLPage() {
                                                     ? 'bg-red-500'
                                                     : detecting
                                                         ? 'bg-blue-500'
-                                                        : 'bg-teal-500'
+                                                        : transcribing
+                                                            ? 'bg-purple-500'
+                                                            : 'bg-teal-500'
                                         }`}
                                         style={{ width: `${progress.progress}%` }}
                                     ></div>
