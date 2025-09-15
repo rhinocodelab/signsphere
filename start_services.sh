@@ -257,7 +257,7 @@ fi
 print_success "Frontend build completed successfully"
 
 print_status "Starting Frontend (HTTPS on port 3000)..."
-npm run dev -- --experimental-https --experimental-https-key "$PROJECT_ROOT/certificates/signsphere.key" --experimental-https-cert "$PROJECT_ROOT/certificates/signsphere.crt" --hostname 0.0.0.0 &
+NODE_TLS_REJECT_UNAUTHORIZED=0 npm run dev -- --experimental-https --experimental-https-key "$PROJECT_ROOT/certificates/signsphere.key" --experimental-https-cert "$PROJECT_ROOT/certificates/signsphere.crt" --hostname 0.0.0.0 &
 FRONTEND_PID=$!
 print_success "Frontend started with PID: $FRONTEND_PID"
 

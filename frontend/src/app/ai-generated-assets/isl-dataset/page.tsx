@@ -57,8 +57,14 @@ export default function ISLDatasetPage() {
         step: '',
         progress: 0,
         isComplete: false,
-        error: null as string | null
+        error: null as string | null,
+        duplicateWarnings: null as any[] | null
     })
+    const [showDeleteModal, setShowDeleteModal] = useState(false)
+    const [deletingVideo, setDeletingVideo] = useState(false)
+    const [videoToDelete, setVideoToDelete] = useState<{ id: number, filename: string } | null>(null)
+    const [showVideoPlayer, setShowVideoPlayer] = useState(false)
+    const [currentVideo, setCurrentVideo] = useState<ISLVideo | null>(null)
 
     const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -92,7 +98,7 @@ export default function ISLDatasetPage() {
             const params = new URLSearchParams({
                 model_type: modelType,
                 page: currentPage.toString(),
-                limit: '12'
+                limit: '50'
             })
 
             if (searchQuery.trim()) {
@@ -172,7 +178,8 @@ export default function ISLDatasetPage() {
             step: 'Preparing upload...',
             progress: 0,
             isComplete: false,
-            error: null
+            error: null,
+            duplicateWarnings: null
         })
 
         try {
@@ -220,13 +227,34 @@ export default function ISLDatasetPage() {
             if (response.ok) {
                 const result = await response.json()
                 
-                // Complete progress
-                setUploadProgress(prev => ({
-                    ...prev,
-                    step: 'Video uploaded and processing started!',
-                    progress: 100,
-                    isComplete: true
-                }))
+                // Check for duplicate warnings or file replacement
+                if (result.duplicate_warnings && result.duplicate_warnings.length > 0) {
+                    // Show completion with duplicate warnings
+                    setUploadProgress(prev => ({
+                        ...prev,
+                        step: 'Video uploaded successfully! (Duplicates detected)',
+                        progress: 100,
+                        isComplete: true,
+                        duplicateWarnings: result.duplicate_warnings
+                    }))
+                } else if (result.file_replaced) {
+                    // Show completion with file replacement info
+                    setUploadProgress(prev => ({
+                        ...prev,
+                        step: 'Video uploaded successfully! (File replaced)',
+                        progress: 100,
+                        isComplete: true,
+                        duplicateWarnings: null
+                    }))
+                } else {
+                    // Normal completion
+                    setUploadProgress(prev => ({
+                        ...prev,
+                        step: 'Video uploaded and processing started!',
+                        progress: 100,
+                        isComplete: true
+                    }))
+                }
 
                 // Wait a moment to show completion
                 await new Promise(resolve => setTimeout(resolve, 1500))
@@ -240,17 +268,36 @@ export default function ISLDatasetPage() {
                     step: '',
                     progress: 0,
                     isComplete: false,
-                    error: null
+                    error: null,
+                    duplicateWarnings: null
                 })
 
                 fetchVideos() // Refresh the video list
             } else {
                 const error = await response.json()
-                setUploadProgress(prev => ({
-                    ...prev,
-                    step: 'Upload failed',
-                    error: error.detail || 'Upload failed'
-                }))
+                
+                // Handle duplicate upload errors specifically
+                if (response.status === 409 && error.detail && typeof error.detail === 'object') {
+                    const duplicateInfo = error.detail
+                    let errorMessage = duplicateInfo.message || 'Duplicate video detected'
+                    
+                    if (duplicateInfo.duplicate_video) {
+                        const dup = duplicateInfo.duplicate_video
+                        errorMessage = `Duplicate detected: "${dup.display_name}" (${dup.filename}) already exists. File size: ${formatFileSize(dup.file_size)}`
+                    }
+                    
+                    setUploadProgress(prev => ({
+                        ...prev,
+                        step: 'Duplicate video detected',
+                        error: errorMessage
+                    }))
+                } else {
+                    setUploadProgress(prev => ({
+                        ...prev,
+                        step: 'Upload failed',
+                        error: error.detail || 'Upload failed'
+                    }))
+                }
             }
         } catch (error) {
             console.error('Upload error:', error)
@@ -283,6 +330,60 @@ export default function ISLDatasetPage() {
         localStorage.removeItem('user')
         localStorage.removeItem('accessToken')
         window.location.href = '/login'
+    }
+
+    const handlePlayVideo = (video: ISLVideo) => {
+        setCurrentVideo(video)
+        setShowVideoPlayer(true)
+    }
+
+    const closeVideoPlayer = () => {
+        setShowVideoPlayer(false)
+        setCurrentVideo(null)
+    }
+
+    const handleDeleteVideo = (videoId: number, filename: string) => {
+        setVideoToDelete({ id: videoId, filename })
+        setShowDeleteModal(true)
+    }
+
+    const confirmDeleteVideo = async () => {
+        if (!videoToDelete) return
+
+        setDeletingVideo(true)
+        try {
+            const currentHost = window.location.hostname
+            const apiUrl = currentHost === 'localhost'
+                ? 'https://localhost:5001'
+                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
+
+            const response = await fetch(`${apiUrl}/api/v1/isl-videos/${videoToDelete.id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+
+            if (response.ok) {
+                toast.success('Video deleted successfully!')
+                setShowDeleteModal(false)
+                setVideoToDelete(null)
+                fetchVideos() // Refresh the video list
+            } else {
+                const error = await response.json()
+                toast.error(error.detail || 'Failed to delete video')
+            }
+        } catch (error) {
+            console.error('Delete error:', error)
+            toast.error('Failed to delete video')
+        } finally {
+            setDeletingVideo(false)
+        }
+    }
+
+    const cancelDeleteVideo = () => {
+        setShowDeleteModal(false)
+        setVideoToDelete(null)
     }
 
     if (!user) {
@@ -463,7 +564,13 @@ export default function ISLDatasetPage() {
                             </div>
                         ) : videos.length === 0 ? (
                             <div className="text-center py-12">
-                                <div className="text-gray-400 text-6xl mb-4">🎥</div>
+                                <div className="flex justify-center mb-4">
+                                    <img 
+                                        src="/images/icons/isl.png" 
+                                        alt="ISL Icon" 
+                                        className="w-16 h-16 object-contain opacity-60"
+                                    />
+                                </div>
                                 <h3 className="text-lg font-medium text-gray-900 mb-2">No videos found</h3>
                                 <p className="text-gray-500">
                                     {searchQuery ? 'No videos match your search criteria.' : `No ${modelType} model videos uploaded yet.`}
@@ -737,14 +844,43 @@ export default function ISLDatasetPage() {
                                         </div>
                                     </div>
                                 ) : uploadProgress.isComplete ? (
-                                    <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg">
-                                        <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                        <div>
-                                            <p className="text-sm font-medium text-green-800">Success</p>
-                                            <p className="text-sm text-green-600">Video uploaded and processing started!</p>
+                                    <div className="space-y-3">
+                                        <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg">
+                                            <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                            <div>
+                                                <p className="text-sm font-medium text-green-800">Success</p>
+                                                <p className="text-sm text-green-600">{uploadProgress.step}</p>
+                                            </div>
                                         </div>
+                                        
+                                        {/* Duplicate Warnings */}
+                                        {uploadProgress.duplicateWarnings && uploadProgress.duplicateWarnings.length > 0 && (
+                                            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                                <div className="flex items-start">
+                                                    <svg className="w-5 h-5 text-yellow-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                                    </svg>
+                                                    <div className="flex-1">
+                                                        <p className="text-sm font-medium text-yellow-800 mb-2">Duplicate Videos Detected</p>
+                                                        <div className="space-y-2">
+                                                            {uploadProgress.duplicateWarnings.map((warning, index) => (
+                                                                <div key={index} className="text-sm text-yellow-700">
+                                                                    <p className="font-medium">{warning.message}</p>
+                                                                    {warning.duplicate_video && (
+                                                                        <p className="text-xs text-yellow-600 mt-1">
+                                                                            Existing: "{warning.duplicate_video.display_name}" 
+                                                                            ({formatFileSize(warning.duplicate_video.file_size)})
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="flex items-center p-3 bg-teal-50 border border-teal-200 rounded-lg">
@@ -794,7 +930,8 @@ export default function ISLDatasetPage() {
                                                 step: '',
                                                 progress: 0,
                                                 isComplete: false,
-                                                error: null
+                                                error: null,
+                                                duplicateWarnings: null
                                             })
                                         }}
                                         className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
@@ -803,6 +940,110 @@ export default function ISLDatasetPage() {
                                     </button>
                                 </div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Video Player Modal */}
+            {showVideoPlayer && currentVideo && (
+                <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-900">
+                                    {currentVideo.display_name || currentVideo.filename.replace('.mp4', '')}
+                                </h3>
+                                <p className="text-sm text-gray-500">
+                                    Duration: {formatDuration(currentVideo.duration_seconds)} • Size: {formatFileSize(currentVideo.file_size)}
+                                </p>
+                            </div>
+                            <button
+                                onClick={closeVideoPlayer}
+                                className="text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        {/* Video Player */}
+                        <div className="p-4">
+                            <div className="relative bg-black rounded-lg overflow-hidden">
+                                <video
+                                    autoPlay
+                                    loop
+                                    muted
+                                    className="w-full h-auto max-h-[60vh]"
+                                    preload="metadata"
+                                    onError={(e) => {
+                                        console.error('Video error:', e);
+                                        console.error('Video src:', `/videos/isl-videos/${currentVideo.model_type}-model/${currentVideo.filename.replace('.mp4', '')}/${currentVideo.filename}`);
+                                    }}
+                                    onLoadStart={() => {
+                                        console.log('Video load started');
+                                    }}
+                                    onCanPlay={() => {
+                                        console.log('Video can play');
+                                    }}
+                                >
+                                    <source src={`/videos/isl-videos/${currentVideo.model_type}-model/${currentVideo.filename.replace('.mp4', '')}/${currentVideo.filename}`} type="video/mp4" />
+                                    Your browser does not support the video tag.
+                                </video>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {showDeleteModal && videoToDelete && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+                        <div className="p-6">
+                            {/* Header */}
+                            <div className="flex items-center mb-4">
+                                <div className="flex-shrink-0">
+                                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                                        <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div className="ml-3">
+                                    <h3 className="text-lg font-medium text-gray-900">Delete Video</h3>
+                                    <p className="text-sm text-gray-500">This action cannot be undone.</p>
+                                </div>
+                            </div>
+
+                            {/* Content */}
+                            <div className="mb-6">
+                                <p className="text-sm text-gray-500">
+                                    Are you sure you want to delete the video <span className="font-semibold text-gray-900">{videoToDelete.filename}</span>?
+                                    This action cannot be undone.
+                                </p>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex justify-end space-x-3">
+                                <button
+                                    onClick={cancelDeleteVideo}
+                                    className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors duration-200"
+                                    disabled={deletingVideo}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmDeleteVideo}
+                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    disabled={deletingVideo}
+                                >
+                                    {deletingVideo ? 'Deleting...' : 'Delete'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
@@ -8,9 +9,27 @@ from pathlib import Path
 
 from app.db.deps import get_db
 from app.schemas.isl_video import ISLVideo, ISLVideoCreate, ISLVideoUpdate, ISLVideoSearch
+from app.models.isl_video import ISLVideo as ISLVideoModel
 from app.services.isl_video import get_isl_video_service, ISLVideoService
 
 router = APIRouter()
+
+def get_project_root():
+    """Get the project root directory dynamically"""
+    current_file = Path(__file__)
+    # Look for the project root by going up until we find the signsphere directory
+    current = current_file.parent
+    while current != current.parent:  # Stop at root
+        if current.name == "signsphere":
+            return current
+        current = current.parent
+    # Fallback: go up 5 levels from current file
+    return current_file.parent.parent.parent.parent.parent
+
+def get_public_videos_path():
+    """Get the public videos directory path"""
+    project_root = get_project_root()
+    return project_root / "frontend" / "public" / "videos" / "isl-videos"
 
 
 @router.get("/test")
@@ -99,6 +118,61 @@ async def process_video_async(video_id: int, input_path: str, output_folder: str
             pass
 
 
+@router.post("/check-duplicate", response_model=dict)
+def check_duplicate_video(
+    filename: str = Form(...),
+    model_type: str = Form(...),
+    file_size: int = Form(None),
+    display_name: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    """Check if a video with the same filename/display_name already exists"""
+    
+    # Validate model type
+    if model_type not in ['male', 'female']:
+        raise HTTPException(
+            status_code=400, detail="Model type must be 'male' or 'female'")
+    
+    video_service = get_isl_video_service(db)
+    
+    # Check for exact duplicates
+    duplicate_video = video_service.check_duplicate_video(filename, model_type, file_size)
+    if duplicate_video:
+        return {
+            "is_duplicate": True,
+            "duplicate_type": "exact_match",
+            "duplicate_video": {
+                "id": duplicate_video.id,
+                "filename": duplicate_video.filename,
+                "display_name": duplicate_video.display_name,
+                "file_size": duplicate_video.file_size,
+                "created_at": duplicate_video.created_at.isoformat() if duplicate_video.created_at else None
+            }
+        }
+    
+    # Check for display name duplicates
+    final_display_name = display_name or os.path.splitext(filename)[0]
+    display_name_duplicate = video_service.check_duplicate_by_display_name(final_display_name, model_type)
+    if display_name_duplicate:
+        return {
+            "is_duplicate": True,
+            "duplicate_type": "display_name_match",
+            "duplicate_video": {
+                "id": display_name_duplicate.id,
+                "filename": display_name_duplicate.filename,
+                "display_name": display_name_duplicate.display_name,
+                "file_size": display_name_duplicate.file_size,
+                "created_at": display_name_duplicate.created_at.isoformat() if display_name_duplicate.created_at else None
+            }
+        }
+    
+    return {
+        "is_duplicate": False,
+        "duplicate_type": None,
+        "duplicate_video": None
+    }
+
+
 @router.post("/upload", response_model=dict)
 async def upload_isl_video(
     file: UploadFile = File(...),
@@ -124,41 +198,112 @@ async def upload_isl_video(
     filename = file.filename
     folder_name = os.path.splitext(filename)[0]  # Remove .mp4 extension
 
-    # Create directory structure
-    base_path = "/var/www/signsphere/uploads/isl-videos"
-    model_path = f"{base_path}/{model_type}-model"
-    video_folder = f"{model_path}/{folder_name}"
+    # Check for duplicates before processing
+    video_service = get_isl_video_service(db)
+    
+    # Read file content to get file size
+    content = await file.read()
+    file_size = len(content)
+    
+    # Check for duplicates but allow upload to continue
+    duplicate_warnings = []
+    
+    # Check for exact duplicates
+    duplicate_video = video_service.check_duplicate_video(filename, model_type, file_size)
+    if duplicate_video:
+        duplicate_warnings.append({
+            "type": "exact_match",
+            "message": f"Exact duplicate found: '{filename}' with same file size",
+            "duplicate_video": {
+                "id": duplicate_video.id,
+                "filename": duplicate_video.filename,
+                "display_name": duplicate_video.display_name,
+                "file_size": duplicate_video.file_size,
+                "created_at": duplicate_video.created_at.isoformat() if duplicate_video.created_at else None
+            }
+        })
+    
+    # Check for potential duplicates (same display name)
+    final_display_name = display_name or folder_name
+    display_name_duplicate = video_service.check_duplicate_by_display_name(final_display_name, model_type)
+    if display_name_duplicate and display_name_duplicate != duplicate_video:
+        duplicate_warnings.append({
+            "type": "display_name_match",
+            "message": f"Display name duplicate found: '{final_display_name}'",
+            "duplicate_video": {
+                "id": display_name_duplicate.id,
+                "filename": display_name_duplicate.filename,
+                "display_name": display_name_duplicate.display_name,
+                "file_size": display_name_duplicate.file_size,
+                "created_at": display_name_duplicate.created_at.isoformat() if display_name_duplicate.created_at else None
+            }
+        })
 
+    # Create directory structure in public folder
+    base_path = get_public_videos_path()
+    model_path = base_path / f"{model_type}-model"
+    video_folder = model_path / folder_name
+    
     # Create folder
-    os.makedirs(video_folder, exist_ok=True)
-
-    # Save original file
-    original_path = f"{video_folder}/{filename}"
+    os.makedirs(str(video_folder), exist_ok=True)
+    
+    # Check if file already exists and get existing video record
+    original_path = video_folder / filename
+    path_str = str(original_path)
+    existing_video = db.query(ISLVideoModel).filter(ISLVideoModel.video_path == path_str).first()
     try:
-        content = await file.read()
-        with open(original_path, "wb") as buffer:
+        with open(str(original_path), "wb") as buffer:
             buffer.write(content)
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to save file: {str(e)}")
 
-    # Create database record
+    # Create or update database record
     video_service = get_isl_video_service(db)
-    video_data = ISLVideoCreate(
-        filename=filename,
-        display_name=display_name or folder_name,
-        video_path=original_path,
-        file_size=len(content),
-        model_type=model_type,
-        mime_type="video/mp4",
-        file_extension="mp4",
-        description=description,
-        tags=tags,
-        is_active=True
-    )
-
-    # Save to database
-    db_video = video_service.create_isl_video(video_data)
+    
+    if existing_video:
+        # Update existing record
+        update_data = ISLVideoUpdate(
+            filename=filename,
+            display_name=display_name or folder_name,
+            file_size=len(content),
+            model_type=model_type,
+            mime_type="video/mp4",
+            file_extension="mp4",
+            description=description,
+            tags=tags,
+            is_active=True
+        )
+        db_video = video_service.update_isl_video(existing_video.id, update_data)
+        
+        # Add replacement info to duplicate warnings
+        if duplicate_warnings:
+            duplicate_warnings.append({
+                "type": "file_replaced",
+                "message": f"Existing file '{filename}' was replaced with new version",
+                "replaced_video": {
+                    "id": existing_video.id,
+                    "filename": existing_video.filename,
+                    "display_name": existing_video.display_name,
+                    "file_size": existing_video.file_size,
+                    "created_at": existing_video.created_at.isoformat() if existing_video.created_at else None
+                }
+            })
+    else:
+        # Create new record
+        video_data = ISLVideoCreate(
+            filename=filename,
+            display_name=display_name or folder_name,
+            video_path=str(original_path),
+            file_size=len(content),
+            model_type=model_type,
+            mime_type="video/mp4",
+            file_extension="mp4",
+            description=description,
+            tags=tags,
+            is_active=True
+        )
+        db_video = video_service.create_isl_video(video_data)
 
     # Start background processing
     asyncio.create_task(process_video_async(
@@ -167,7 +312,9 @@ async def upload_isl_video(
     return {
         "message": "Video uploaded successfully",
         "video_id": db_video.id,
-        "processing_status": "processing"
+        "processing_status": "processing",
+        "duplicate_warnings": duplicate_warnings if duplicate_warnings else None,
+        "file_replaced": existing_video is not None
     }
 
 
@@ -291,7 +438,7 @@ def delete_isl_video(
     video_id: int,
     db: Session = Depends(get_db)
 ):
-    """Delete ISL video (soft delete)"""
+    """Delete ISL video (soft delete and remove file)"""
 
     video_service = get_isl_video_service(db)
     success = video_service.delete_isl_video(video_id)
@@ -300,6 +447,21 @@ def delete_isl_video(
         raise HTTPException(status_code=404, detail="Video not found")
 
     return {"message": "Video deleted successfully"}
+
+@router.delete("/{video_id}/permanent")
+def permanently_delete_isl_video(
+    video_id: int,
+    db: Session = Depends(get_db)
+):
+    """Permanently delete ISL video (hard delete)"""
+
+    video_service = get_isl_video_service(db)
+    success = video_service.hard_delete_isl_video(video_id)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    return {"message": "Video permanently deleted"}
 
 
 @router.get("/statistics/summary")
@@ -310,3 +472,47 @@ def get_video_statistics(db: Session = Depends(get_db)):
     stats = video_service.get_video_statistics()
 
     return stats
+
+
+@router.options("/{video_id}/stream")
+def stream_video_options(video_id: int):
+    """Handle preflight requests for video streaming"""
+    return {"message": "OK"}
+
+@router.get("/{video_id}/stream")
+def stream_video(video_id: int, db: Session = Depends(get_db)):
+    """Stream video file"""
+    try:
+        video_service = get_isl_video_service(db)
+        video = video_service.get_isl_video(video_id)
+        
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Check if the video file exists
+        if not os.path.exists(video.video_path):
+            raise HTTPException(status_code=404, detail=f"Video file not found at: {video.video_path}")
+        
+        def iterfile():
+            try:
+                with open(video.video_path, mode="rb") as file_like:
+                    yield from file_like
+            except Exception as e:
+                print(f"Error reading file: {e}")
+                raise
+        
+        return StreamingResponse(
+            iterfile(), 
+            media_type="video/mp4",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Disposition": f"inline; filename={video.filename}",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges"
+            }
+        )
+    except Exception as e:
+        print(f"Error in stream_video: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
