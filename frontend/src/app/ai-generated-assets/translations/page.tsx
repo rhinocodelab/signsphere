@@ -38,6 +38,8 @@ export default function TranslationsTablePage() {
     const [showDeleteModal, setShowDeleteModal] = useState(false)
     const [deletingTranslation, setDeletingTranslation] = useState(false)
     const [translationToDelete, setTranslationToDelete] = useState<{ id: number, trainNumber: string } | null>(null)
+    const [currentPage, setCurrentPage] = useState(1)
+    const [itemsPerPage] = useState(10)
 
     useEffect(() => {
         // Check if user is logged in
@@ -65,6 +67,29 @@ export default function TranslationsTablePage() {
             setTranslations([])
         } finally {
             setLoading(false)
+        }
+    }
+
+    // Pagination calculations
+    const totalPages = Math.ceil(translations.length / itemsPerPage)
+    const startIndex = (currentPage - 1) * itemsPerPage
+    const endIndex = startIndex + itemsPerPage
+    const currentTranslations = translations.slice(startIndex, endIndex)
+
+    // Pagination navigation functions
+    const goToPage = (page: number) => {
+        setCurrentPage(page)
+    }
+
+    const goToPreviousPage = () => {
+        if (currentPage > 1) {
+            setCurrentPage(currentPage - 1)
+        }
+    }
+
+    const goToNextPage = () => {
+        if (currentPage < totalPages) {
+            setCurrentPage(currentPage + 1)
         }
     }
 
@@ -371,7 +396,7 @@ export default function TranslationsTablePage() {
                                             </tr>
                                         </thead>
                                         <tbody className="bg-white divide-y divide-gray-200">
-                                            {translations.map((translation) => {
+                                            {currentTranslations.map((translation) => {
                                                 const data = getTranslationData(translation, selectedLanguage)
                                                 return (
                                                     <tr key={translation.id} className="hover:bg-gray-50 transition-colors">
@@ -407,6 +432,90 @@ export default function TranslationsTablePage() {
                                             })}
                                         </tbody>
                                     </table>
+                                </div>
+                            )}
+
+                            {/* Pagination */}
+                            {translations.length > 0 && (
+                                <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+                                    <div className="flex-1 flex justify-between sm:hidden">
+                                        <button 
+                                            onClick={goToPreviousPage}
+                                            disabled={currentPage === 1}
+                                            className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Previous
+                                        </button>
+                                        <button 
+                                            onClick={goToNextPage}
+                                            disabled={currentPage === totalPages}
+                                            className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                    <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                                        <div>
+                                            <p className="text-sm text-gray-700">
+                                                Showing <span className="font-medium">{startIndex + 1}</span> to <span className="font-medium">{Math.min(endIndex, translations.length)}</span> of{' '}
+                                                <span className="font-medium">{translations.length}</span> results
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                                                <button 
+                                                    onClick={goToPreviousPage}
+                                                    disabled={currentPage === 1}
+                                                    className="relative inline-flex items-center px-3 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    Previous
+                                                </button>
+                                                
+                                                {/* Page numbers */}
+                                                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                                                    // Show first page, last page, current page, and pages around current page
+                                                    const shouldShow = 
+                                                        page === 1 || 
+                                                        page === totalPages || 
+                                                        (page >= currentPage - 1 && page <= currentPage + 1)
+                                                    
+                                                    if (!shouldShow) {
+                                                        // Show ellipsis for gaps
+                                                        if (page === currentPage - 2 || page === currentPage + 2) {
+                                                            return (
+                                                                <span key={page} className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                                                                    ...
+                                                                </span>
+                                                            )
+                                                        }
+                                                        return null
+                                                    }
+                                                    
+                                                    return (
+                                                        <button
+                                                            key={page}
+                                                            onClick={() => goToPage(page)}
+                                                            className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                                                                page === currentPage
+                                                                    ? 'z-10 bg-teal-50 border-teal-500 text-teal-600'
+                                                                    : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                                                            }`}
+                                                        >
+                                                            {page}
+                                                        </button>
+                                                    )
+                                                })}
+                                                
+                                                <button 
+                                                    onClick={goToNextPage}
+                                                    disabled={currentPage === totalPages}
+                                                    className="relative inline-flex items-center px-3 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    Next
+                                                </button>
+                                            </nav>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </div>

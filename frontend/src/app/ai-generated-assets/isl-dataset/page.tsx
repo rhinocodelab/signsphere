@@ -52,6 +52,13 @@ export default function ISLDatasetPage() {
     const [displayName, setDisplayName] = useState('')
     const [description, setDescription] = useState('')
     const [tags, setTags] = useState('')
+    const [showUploadProgressModal, setShowUploadProgressModal] = useState(false)
+    const [uploadProgress, setUploadProgress] = useState({
+        step: '',
+        progress: 0,
+        isComplete: false,
+        error: null as string | null
+    })
 
     const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -160,7 +167,35 @@ export default function ISLDatasetPage() {
         }
 
         setUploading(true)
+        setShowUploadProgressModal(true)
+        setUploadProgress({
+            step: 'Preparing upload...',
+            progress: 0,
+            isComplete: false,
+            error: null
+        })
+
         try {
+            // Simulate upload progress steps
+            const progressSteps = [
+                { step: 'Preparing upload...', progress: 10 },
+                { step: 'Uploading video file...', progress: 30 },
+                { step: 'Saving to database...', progress: 50 },
+                { step: 'Starting video processing...', progress: 60 },
+                { step: 'Processing with FFmpeg...', progress: 80 },
+                { step: 'Extracting metadata...', progress: 90 }
+            ]
+
+            // Simulate progress
+            for (const step of progressSteps) {
+                setUploadProgress(prev => ({
+                    ...prev,
+                    step: step.step,
+                    progress: step.progress
+                }))
+                await new Promise(resolve => setTimeout(resolve, 800))
+            }
+
             const currentHost = window.location.hostname
             const apiUrl = currentHost === 'localhost'
                 ? 'https://localhost:5001'
@@ -171,6 +206,12 @@ export default function ISLDatasetPage() {
             formData.append('model_type', uploadModelType)
             formData.append('display_name', displayName)
 
+            setUploadProgress(prev => ({
+                ...prev,
+                step: 'Finalizing upload...',
+                progress: 95
+            }))
+
             const response = await fetch(`${apiUrl}/api/v1/isl-videos/upload`, {
                 method: 'POST',
                 body: formData
@@ -178,18 +219,46 @@ export default function ISLDatasetPage() {
 
             if (response.ok) {
                 const result = await response.json()
-                toast.success('Video uploaded successfully! Processing will begin shortly.')
+                
+                // Complete progress
+                setUploadProgress(prev => ({
+                    ...prev,
+                    step: 'Video uploaded and processing started!',
+                    progress: 100,
+                    isComplete: true
+                }))
+
+                // Wait a moment to show completion
+                await new Promise(resolve => setTimeout(resolve, 1500))
+
+                // Close modals and reset
+                setShowUploadProgressModal(false)
                 setShowUploadModal(false)
                 setSelectedFile(null)
                 setDisplayName('')
+                setUploadProgress({
+                    step: '',
+                    progress: 0,
+                    isComplete: false,
+                    error: null
+                })
+
                 fetchVideos() // Refresh the video list
             } else {
                 const error = await response.json()
-                toast.error(error.detail || 'Upload failed')
+                setUploadProgress(prev => ({
+                    ...prev,
+                    step: 'Upload failed',
+                    error: error.detail || 'Upload failed'
+                }))
             }
         } catch (error) {
             console.error('Upload error:', error)
-            toast.error('Upload failed')
+            setUploadProgress(prev => ({
+                ...prev,
+                step: 'Upload failed',
+                error: 'Network error occurred'
+            }))
         } finally {
             setUploading(false)
         }
@@ -402,31 +471,57 @@ export default function ISLDatasetPage() {
                             </div>
                         ) : (
                             <>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
+                                <div className="grid grid-cols-12 gap-3 mb-8">
                                     {videos.map((video) => (
-                                        <div key={video.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
-                                            <div className="aspect-video bg-gray-100 flex items-center justify-center">
-                                                <div className="text-center">
-                                                    <div className="text-4xl text-gray-400 mb-2">🎥</div>
-                                                    <p className="text-sm text-gray-500">Video Preview</p>
-                                                </div>
+                                        <div key={video.id} className="bg-gray-50 rounded shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-all duration-200 cursor-pointer group relative">
+                                            <div className="aspect-square bg-gray-50 flex flex-col items-center justify-center relative" style={{ height: '80px' }}>
+                                                <img 
+                                                    src="/images/icons/isl.png" 
+                                                    alt="ISL Video" 
+                                                    className="w-12 h-12 object-contain opacity-70 group-hover:opacity-100 transition-opacity"
+                                                />
+                                                <div className="w-full h-px bg-gray-300 my-1"></div>
+                                                <p className="text-xs text-gray-600 text-center truncate w-full leading-tight">
+                                                    {video.display_name || video.filename.replace('.mp4', '')}
+                                                </p>
                                             </div>
-                                            <div className="p-4">
-                                                <h3 className="font-medium text-gray-900 mb-1 truncate">
-                                                    {video.display_name || video.filename}
-                                                </h3>
-                                                <div className="text-sm text-gray-500 space-y-1">
-                                                    <p>Size: {formatFileSize(video.file_size)}</p>
-                                                    {video.duration_seconds && (
-                                                        <p>Duration: {formatDuration(video.duration_seconds)}</p>
-                                                    )}
-                                                    <p>Model: {video.model_type}</p>
+                                            
+                                            {/* Hover Overlay - covers entire card */}
+                                            <div className="absolute inset-0 bg-black bg-opacity-85 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                                                <div className="text-center text-white p-1">
+                                                    <div className="text-xs space-y-0.5 mb-2">
+                                                        {video.duration_seconds && (
+                                                            <p className="font-medium">{formatDuration(video.duration_seconds)}</p>
+                                                        )}
+                                                        <p className="text-gray-300">{formatFileSize(video.file_size)}</p>
+                                                    </div>
+                                                    <div className="flex space-x-1.5 justify-center">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                handlePlayVideo(video)
+                                                            }}
+                                                            className="bg-teal-600 hover:bg-teal-700 text-white p-1.5 rounded-full transition-colors"
+                                                            title="Play Video"
+                                                        >
+                                                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                                                                <path d="M8 5v14l11-7z"/>
+                                                            </svg>
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                handleDeleteVideo(video.id, video.filename)
+                                                            }}
+                                                            className="bg-red-600 hover:bg-red-700 text-white p-1.5 rounded-full transition-colors"
+                                                            title="Delete Video"
+                                                        >
+                                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                {video.description && (
-                                                    <p className="text-sm text-gray-600 mt-2 line-clamp-2">
-                                                        {video.description}
-                                                    </p>
-                                                )}
                                             </div>
                                         </div>
                                     ))}
@@ -583,6 +678,131 @@ export default function ISLDatasetPage() {
                                     {uploading ? 'Uploading...' : 'Upload'}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Upload Progress Modal */}
+            {showUploadProgressModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+                        <div className="p-6">
+                            {/* Header */}
+                            <div className="flex items-center mb-6">
+                                <div className="flex-shrink-0">
+                                    <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center">
+                                        <svg className="w-6 h-6 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div className="ml-4">
+                                    <h3 className="text-lg font-medium text-gray-900">Uploading Video</h3>
+                                    <p className="text-sm text-gray-500">
+                                        {selectedFile?.name} ({uploadModelType} model)
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="mb-6">
+                                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                                    <span>{uploadProgress.step}</span>
+                                    <span>{uploadProgress.progress}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div
+                                        className={`h-2 rounded-full transition-all duration-500 ${uploadProgress.isComplete
+                                            ? 'bg-green-500'
+                                            : uploadProgress.error
+                                                ? 'bg-red-500'
+                                                : 'bg-teal-500'
+                                            }`}
+                                        style={{ width: `${uploadProgress.progress}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+
+                            {/* Status Message */}
+                            <div className="mb-6">
+                                {uploadProgress.error ? (
+                                    <div className="flex items-center p-3 bg-red-50 border border-red-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-red-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div>
+                                            <p className="text-sm font-medium text-red-800">Error</p>
+                                            <p className="text-sm text-red-600">{uploadProgress.error}</p>
+                                        </div>
+                                    </div>
+                                ) : uploadProgress.isComplete ? (
+                                    <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                        <div>
+                                            <p className="text-sm font-medium text-green-800">Success</p>
+                                            <p className="text-sm text-green-600">Video uploaded and processing started!</p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center p-3 bg-teal-50 border border-teal-200 rounded-lg">
+                                        <svg className="w-5 h-5 text-teal-500 mr-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                        <div>
+                                            <p className="text-sm font-medium text-teal-800">Processing</p>
+                                            <p className="text-sm text-teal-600">Please wait while we upload and process your video...</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Processing Steps Info */}
+                            {!uploadProgress.error && !uploadProgress.isComplete && (
+                                <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                                    <h4 className="text-sm font-medium text-gray-900 mb-2">Processing Steps:</h4>
+                                    <ul className="text-sm text-gray-600 space-y-1">
+                                        <li className="flex items-center">
+                                            <span className="w-2 h-2 bg-teal-500 rounded-full mr-2"></span>
+                                            Upload video file
+                                        </li>
+                                        <li className="flex items-center">
+                                            <span className="w-2 h-2 bg-teal-500 rounded-full mr-2"></span>
+                                            Save to database
+                                        </li>
+                                        <li className="flex items-center">
+                                            <span className="w-2 h-2 bg-teal-500 rounded-full mr-2"></span>
+                                            Process with FFmpeg (30fps, 1280x720)
+                                        </li>
+                                        <li className="flex items-center">
+                                            <span className="w-2 h-2 bg-teal-500 rounded-full mr-2"></span>
+                                            Extract metadata
+                                        </li>
+                                    </ul>
+                                </div>
+                            )}
+
+                            {/* Action Buttons */}
+                            {uploadProgress.error && (
+                                <div className="flex justify-end space-x-3">
+                                    <button
+                                        onClick={() => {
+                                            setShowUploadProgressModal(false)
+                                            setUploadProgress({
+                                                step: '',
+                                                progress: 0,
+                                                isComplete: false,
+                                                error: null
+                                            })
+                                        }}
+                                        className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
