@@ -37,6 +37,16 @@ interface SpeechRecognitionResult {
     }
 }
 
+interface TranslationResult {
+    success: boolean
+    original_text: string
+    translated_text: string
+    source_language_code: string
+    target_language_code: string
+    confidence?: number
+    error?: string
+}
+
 export default function AudioToISLPage() {
     const router = useRouter()
     const [user, setUser] = useState<any>(null)
@@ -47,6 +57,9 @@ export default function AudioToISLPage() {
     const [result, setResult] = useState<LanguageDetectionResult | null>(null)
     const [transcriptResult, setTranscriptResult] = useState<SpeechRecognitionResult | null>(null)
     const [transcribing, setTranscribing] = useState(false)
+    const [translationResult, setTranslationResult] = useState<TranslationResult | null>(null)
+    const [translating, setTranslating] = useState(false)
+    const [translatedText, setTranslatedText] = useState<string>('')
     const [dragActive, setDragActive] = useState(false)
     const [showProgressModal, setShowProgressModal] = useState(false)
     const [progress, setProgress] = useState({
@@ -409,20 +422,36 @@ export default function AudioToISLPage() {
                 const transcriptResult = await response.json()
                 setTranscriptResult(transcriptResult)
                 
-                // Complete progress
-                setProgress(prev => ({
-                    ...prev,
-                    step: 'Speech recognition completed successfully!',
-                    progress: 100,
-                    isComplete: true
-                }))
+                // Check if we need translation (skip if already English)
+                if (languageCode === 'en-IN') {
+                    // Skip translation for English, use transcribed text directly
+                    setTranslatedText(transcriptResult.transcript)
+                    setTranslationResult({
+                        success: true,
+                        original_text: transcriptResult.transcript,
+                        translated_text: transcriptResult.transcript,
+                        source_language_code: 'en-IN',
+                        target_language_code: 'en-IN'
+                    })
+                    
+                    // Complete progress
+                    setProgress(prev => ({
+                        ...prev,
+                        step: 'Process completed successfully!',
+                        progress: 100,
+                        isComplete: true
+                    }))
 
-                // Wait a moment to show completion
-                await new Promise(resolve => setTimeout(resolve, 1500))
+                    // Wait a moment to show completion
+                    await new Promise(resolve => setTimeout(resolve, 1500))
 
-                // Close modal
-                setShowProgressModal(false)
-                toast.success('Audio transcribed successfully!')
+                    // Close modal
+                    setShowProgressModal(false)
+                    toast.success('Audio processed successfully!')
+                } else {
+                    // Continue with translation for non-English languages
+                    await handleTranslationInModal(transcriptResult.transcript, languageCode)
+                }
             } else {
                 const error = await response.json()
                 setProgress(prev => ({
@@ -445,6 +474,95 @@ export default function AudioToISLPage() {
         }
     }
 
+    const handleTranslationInModal = async (text: string, sourceLanguageCode: string) => {
+        console.log(`Starting translation: ${sourceLanguageCode} -> en-IN`)
+        
+        setTranslating(true)
+        setProgress({
+            step: 'Starting translation...',
+            progress: 0,
+            isComplete: false,
+            error: null
+        })
+
+        try {
+            // Simulate progress steps
+            const progressSteps = [
+                { step: 'Preparing text for translation...', progress: 20 },
+                { step: 'Sending to translation service...', progress: 40 },
+                { step: 'Processing translation...', progress: 60 },
+                { step: 'Finalizing translation...', progress: 80 }
+            ]
+
+            // Simulate progress
+            for (const step of progressSteps) {
+                setProgress(prev => ({
+                    ...prev,
+                    step: step.step,
+                    progress: step.progress
+                }))
+                await new Promise(resolve => setTimeout(resolve, 600))
+            }
+
+            const currentHost = window.location.hostname
+            const apiUrl = currentHost === 'localhost'
+                ? 'https://localhost:5001'
+                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
+
+            const response = await fetch(`${apiUrl}/api/v1/text-translation/translate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    text: text,
+                    source_language_code: sourceLanguageCode,
+                    target_language_code: 'en-IN'
+                })
+            })
+
+            if (response.ok) {
+                const translationResult = await response.json()
+                setTranslationResult(translationResult)
+                setTranslatedText(translationResult.translated_text)
+                
+                // Complete progress
+                setProgress(prev => ({
+                    ...prev,
+                    step: 'Translation completed successfully!',
+                    progress: 100,
+                    isComplete: true
+                }))
+
+                // Wait a moment to show completion
+                await new Promise(resolve => setTimeout(resolve, 1500))
+
+                // Close modal
+                setShowProgressModal(false)
+                toast.success('Audio processed and translated successfully!')
+            } else {
+                const error = await response.json()
+                setProgress(prev => ({
+                    ...prev,
+                    step: 'Translation failed',
+                    error: error.detail || 'Translation failed'
+                }))
+                toast.error(error.detail || 'Translation failed')
+                // Don't close modal on translation failure - let user see the error
+            }
+        } catch (error) {
+            console.error('Translation error:', error)
+            setProgress(prev => ({
+                ...prev,
+                step: 'Network error occurred',
+                error: 'Network error occurred'
+            }))
+            toast.error('Network error occurred')
+        } finally {
+            setTranslating(false)
+        }
+    }
+
     const handleDetectLanguage = async () => {
         if (!selectedFile) {
             toast.error('Please select an audio file')
@@ -454,11 +572,18 @@ export default function AudioToISLPage() {
     }
 
     const handleGenerateISL = async () => {
-        if (!selectedFile || !result) {
-            toast.error('Please detect language first')
+        if (!selectedFile || !result || !transcriptResult || !translationResult) {
+            toast.error('Please complete audio processing first')
             return
         }
 
+        if (!translatedText.trim()) {
+            toast.error('Please provide English translation text')
+            return
+        }
+
+        console.log('Generating ISL video with translated text:', translatedText)
+        
         setGenerating(true)
         setShowProgressModal(true)
         setProgress({
@@ -471,11 +596,11 @@ export default function AudioToISLPage() {
         try {
             // Simulate progress steps
             const progressSteps = [
-                { step: 'Analyzing audio content...', progress: 20 },
-                { step: 'Transcribing speech to text...', progress: 40 },
-                { step: 'Converting text to ISL signs...', progress: 60 },
-                { step: 'Generating ISL video...', progress: 80 },
-                { step: 'Finalizing ISL video...', progress: 95 }
+                { step: 'Processing English text...', progress: 20 },
+                { step: 'Converting text to ISL signs...', progress: 40 },
+                { step: 'Generating ISL video...', progress: 60 },
+                { step: 'Finalizing ISL video...', progress: 80 },
+                { step: 'ISL video ready!', progress: 95 }
             ]
 
             // Simulate progress
@@ -720,6 +845,8 @@ export default function AudioToISLPage() {
                                                             setSelectedFile(null)
                                                             setResult(null)
                                                             setTranscriptResult(null)
+                                                            setTranslationResult(null)
+                                                            setTranslatedText('')
                                                         }}
                                                         className="text-sm text-red-600 hover:text-red-800 font-medium"
                                                     >
@@ -781,13 +908,31 @@ export default function AudioToISLPage() {
                                             </div>
                                         )}
 
+                                        {/* English Translation Text Area */}
+                                        {translationResult && (
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <h3 className="text-lg font-semibold text-gray-900 mb-2">English Translation</h3>
+                                                </div>
+                                                
+                                                <div className="space-y-2">
+                                                    <textarea
+                                                        value={translatedText}
+                                                        onChange={(e) => setTranslatedText(e.target.value)}
+                                                        className="w-full h-32 px-3 py-2 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white text-gray-700"
+                                                        placeholder="English translation will appear here..."
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {/* Action Button */}
                                         <div className="space-y-3">
                                             <button
                                                 onClick={handleGenerateISL}
-                                                disabled={!selectedFile || !result || !transcriptResult || generating}
+                                                disabled={!selectedFile || !result || !transcriptResult || !translationResult || generating}
                                                 className={`w-full px-4 py-3 rounded-lg font-medium transition-colors ${
-                                                    !selectedFile || !result || !transcriptResult || generating
+                                                    !selectedFile || !result || !transcriptResult || !translationResult || generating
                                                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                         : 'bg-teal-600 text-white hover:bg-teal-700'
                                                 }`}
@@ -863,7 +1008,7 @@ export default function AudioToISLPage() {
                     <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
                         <div className="text-center">
                             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                                {detecting ? 'Detecting Language' : transcribing ? 'Transcribing Audio' : 'Generating ISL Video'}
+                                {detecting ? 'Detecting Language' : transcribing ? 'Transcribing Audio' : translating ? 'Translating to English' : 'Generating ISL Video'}
                             </h3>
                             
                             {/* Progress Bar */}
@@ -879,7 +1024,9 @@ export default function AudioToISLPage() {
                                                         ? 'bg-blue-500'
                                                         : transcribing
                                                             ? 'bg-purple-500'
-                                                            : 'bg-teal-500'
+                                                            : translating
+                                                                ? 'bg-orange-500'
+                                                                : 'bg-teal-500'
                                         }`}
                                         style={{ width: `${progress.progress}%` }}
                                     ></div>

@@ -38,9 +38,34 @@ FRONTEND_DIR="$PROJECT_ROOT/frontend"
 # Set GCP credentials path dynamically
 export GOOGLE_APPLICATION_CREDENTIALS="$PROJECT_ROOT/frontend/config/isl.json"
 
+# Extract and set GCP project ID from service account file
+if [ -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+    GCP_PROJECT_ID=$(python3 -c "
+import json
+import sys
+try:
+    with open('$GOOGLE_APPLICATION_CREDENTIALS', 'r') as f:
+        data = json.load(f)
+        print(data.get('project_id', ''))
+except:
+    sys.exit(1)
+")
+    if [ $? -eq 0 ] && [ -n "$GCP_PROJECT_ID" ]; then
+        export GOOGLE_CLOUD_PROJECT="$GCP_PROJECT_ID"
+        print_success "GCP Project ID extracted: $GCP_PROJECT_ID"
+    else
+        print_warning "Could not extract GCP Project ID from service account file"
+    fi
+else
+    print_warning "GCP service account file not found, project ID not set"
+fi
+
 print_status "SignSphere Service Manager"
 print_status "Project Root: $PROJECT_ROOT"
 print_status "GCP Credentials: $GOOGLE_APPLICATION_CREDENTIALS"
+if [ -n "$GOOGLE_CLOUD_PROJECT" ]; then
+    print_status "GCP Project ID: $GOOGLE_CLOUD_PROJECT"
+fi
 
 # Verify GCP credentials file exists
 if [ ! -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
@@ -248,11 +273,16 @@ source venv/bin/activate
 
 # Verify GCP credentials are accessible
 print_status "Verifying GCP credentials..."
-if python -c "import os; from google.cloud import speech; print('GCP credentials verified successfully')" 2>/dev/null; then
-    print_success "GCP Speech-to-Text API credentials verified"
+if python -c "import os; from google.cloud import speech, translate_v3; print('GCP credentials verified successfully')" 2>/dev/null; then
+    print_success "GCP Speech-to-Text and Translate API credentials verified"
+    if [ -n "$GOOGLE_CLOUD_PROJECT" ]; then
+        print_success "GCP Project ID configured: $GOOGLE_CLOUD_PROJECT"
+    else
+        print_warning "GCP Project ID not configured, but credentials are valid"
+    fi
 else
     print_warning "GCP credentials verification failed, but continuing..."
-    print_status "Speech recognition features may not work properly"
+    print_status "Speech recognition and translation features may not work properly"
 fi
 
 python https_config.py &

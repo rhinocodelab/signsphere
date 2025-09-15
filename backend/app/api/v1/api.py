@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, users, train_routes, train_route_translations, announcement_templates, isl_videos, language_detection, speech_recognition
+from app.api.v1.endpoints import auth, users, train_routes, train_route_translations, announcement_templates, isl_videos, language_detection, speech_recognition, text_translation
 
 api_router = APIRouter()
 
@@ -17,3 +17,5 @@ api_router.include_router(
     language_detection.router, prefix="/language-detection", tags=["language-detection"])
 api_router.include_router(
     speech_recognition.router, prefix="/speech-recognition", tags=["speech-recognition"])
+api_router.include_router(
+    text_translation.router, prefix="/text-translation", tags=["text-translation"])
