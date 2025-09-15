@@ -60,6 +60,12 @@ export default function AudioToISLPage() {
     const [translationResult, setTranslationResult] = useState<TranslationResult | null>(null)
     const [translating, setTranslating] = useState(false)
     const [translatedText, setTranslatedText] = useState<string>('')
+    const [selectedModel, setSelectedModel] = useState<string>('male')
+    const [videoGenerationResult, setVideoGenerationResult] = useState<any>(null)
+    const [generatingVideo, setGeneratingVideo] = useState(false)
+    const [videoPreviewUrl, setVideoPreviewUrl] = useState<string>('')
+    const [videoSaved, setVideoSaved] = useState(false)
+    const [videoSpeed, setVideoSpeed] = useState<number>(1.0)
     const [dragActive, setDragActive] = useState(false)
     const [showProgressModal, setShowProgressModal] = useState(false)
     const [progress, setProgress] = useState({
@@ -571,7 +577,7 @@ export default function AudioToISLPage() {
         await handleDetectLanguageWithFile(selectedFile)
     }
 
-    const handleGenerateISL = async () => {
+    const handleGenerateISLVideo = async () => {
         if (!selectedFile || !result || !transcriptResult || !translationResult) {
             toast.error('Please complete audio processing first')
             return
@@ -583,11 +589,12 @@ export default function AudioToISLPage() {
         }
 
         console.log('Generating ISL video with translated text:', translatedText)
+        console.log('Selected model:', selectedModel)
         
-        setGenerating(true)
+        setGeneratingVideo(true)
         setShowProgressModal(true)
         setProgress({
-            step: 'Preparing ISL generation...',
+            step: 'Preparing ISL video generation...',
             progress: 0,
             isComplete: false,
             error: null
@@ -597,10 +604,10 @@ export default function AudioToISLPage() {
             // Simulate progress steps
             const progressSteps = [
                 { step: 'Processing English text...', progress: 20 },
-                { step: 'Converting text to ISL signs...', progress: 40 },
-                { step: 'Generating ISL video...', progress: 60 },
-                { step: 'Finalizing ISL video...', progress: 80 },
-                { step: 'ISL video ready!', progress: 95 }
+                { step: 'Mapping text to ISL signs...', progress: 40 },
+                { step: 'Stitching video files...', progress: 60 },
+                { step: 'Generating ISL video...', progress: 80 },
+                { step: 'Finalizing video...', progress: 95 }
             ]
 
             // Simulate progress
@@ -610,33 +617,119 @@ export default function AudioToISLPage() {
                     step: step.step,
                     progress: step.progress
                 }))
-                await new Promise(resolve => setTimeout(resolve, 1000))
+                await new Promise(resolve => setTimeout(resolve, 800))
             }
 
-            // Complete progress
-            setProgress(prev => ({
-                ...prev,
-                step: 'ISL video generated successfully!',
-                progress: 100,
-                isComplete: true
-            }))
+            const currentHost = window.location.hostname
+            const apiUrl = currentHost === 'localhost'
+                ? 'https://localhost:5001'
+                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
 
-            // Wait a moment to show completion
-            await new Promise(resolve => setTimeout(resolve, 1500))
+            // Call ISL video generation API
+            const response = await fetch(`${apiUrl}/api/v1/isl-video-generation/generate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    text: translatedText,
+                    model: selectedModel,
+                    user_id: user?.id || 1
+                })
+            })
 
-            // Close modal
-            setShowProgressModal(false)
-            toast.success('ISL video generated successfully!')
+            if (response.ok) {
+                const result = await response.json()
+                setVideoGenerationResult(result)
+                setVideoPreviewUrl(`${apiUrl}${result.preview_url}`)
+                
+                // Complete progress
+                setProgress(prev => ({
+                    ...prev,
+                    step: 'ISL video generated successfully!',
+                    progress: 100,
+                    isComplete: true
+                }))
+
+                // Wait a moment to show completion
+                await new Promise(resolve => setTimeout(resolve, 1500))
+
+                // Close modal
+                setShowProgressModal(false)
+                toast.success('ISL video generated successfully!')
+            } else {
+                const error = await response.json()
+                setProgress(prev => ({
+                    ...prev,
+                    step: 'Video generation failed',
+                    error: error.detail || 'Video generation failed'
+                }))
+                toast.error(error.detail || 'Video generation failed')
+            }
 
         } catch (error) {
-            console.error('Generation error:', error)
+            console.error('Video generation error:', error)
             setProgress(prev => ({
                 ...prev,
-                step: 'Generation failed',
-                error: 'Failed to generate ISL video'
+                step: 'Network error occurred',
+                error: 'Network error occurred'
             }))
+            toast.error('Network error occurred')
         } finally {
-            setGenerating(false)
+            setGeneratingVideo(false)
+        }
+    }
+
+    const handleSaveISLVideo = async () => {
+        if (!videoGenerationResult) return
+        
+        try {
+            const currentHost = window.location.hostname
+            const apiUrl = currentHost === 'localhost'
+                ? 'https://localhost:5001'
+                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
+
+            const response = await fetch(`${apiUrl}/api/v1/isl-video-generation/save`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    temp_video_id: videoGenerationResult.temp_video_id,
+                    user_id: user?.id || 1
+                })
+            })
+
+            if (response.ok) {
+                const result = await response.json()
+                setVideoSaved(true)
+                toast.success('ISL video saved successfully!')
+                console.log('Video saved:', result.final_video_url)
+            } else {
+                const error = await response.json()
+                toast.error(error.detail || 'Failed to save video')
+            }
+        } catch (error) {
+            console.error('Video save error:', error)
+            toast.error('Network error occurred')
+        }
+    }
+
+    const handleVideoSpeedChange = (speed: number) => {
+        setVideoSpeed(speed)
+        // Apply speed to video element and restart playback
+        const videoElement = document.querySelector('video') as HTMLVideoElement
+        if (videoElement) {
+            // Store current time to potentially resume from same position
+            const currentTime = videoElement.currentTime
+            const wasPlaying = !videoElement.paused
+            
+            // Set new playback rate
+            videoElement.playbackRate = speed
+            
+            // Restart video from beginning with new speed
+            videoElement.currentTime = 0
+            videoElement.play()
         }
     }
 
@@ -831,8 +924,8 @@ export default function AudioToISLPage() {
                                                     
                                                     {/* Language Detection Result */}
                                                     {result && (
-                                                        <div className="text-xs text-green-600 font-medium">
-                                                            Language Detected: {result.detected_language}
+                                                        <div className="text-sm text-green-600 font-medium">
+                                                            Language: {result.detected_language}
                                                             {(() => {
                                                                 const languageCode = mapLanguageNameToCode(result.detected_language)
                                                                 return languageCode ? ` (${languageCode})` : ' (Unsupported)'
@@ -847,6 +940,10 @@ export default function AudioToISLPage() {
                                                             setTranscriptResult(null)
                                                             setTranslationResult(null)
                                                             setTranslatedText('')
+                                                            setVideoGenerationResult(null)
+                                                            setVideoPreviewUrl('')
+                                                            setVideoSaved(false)
+                                                            setVideoSpeed(1.0)
                                                         }}
                                                         className="text-sm text-red-600 hover:text-red-800 font-medium"
                                                     >
@@ -926,20 +1023,57 @@ export default function AudioToISLPage() {
                                             </div>
                                         )}
 
+                                        {/* AI Model Selection */}
+                                        {translationResult && (
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <h3 className="text-lg font-semibold text-gray-900 mb-2">AI Model Selection</h3>
+                                                    <p className="text-sm text-gray-600">Choose the AI model for ISL video generation</p>
+                                                </div>
+                                                
+                                                <div className="flex space-x-6">
+                                                    <label className="flex items-center cursor-pointer">
+                                                        <input
+                                                            type="radio"
+                                                            name="model"
+                                                            value="male"
+                                                            checked={selectedModel === 'male'}
+                                                            onChange={(e) => setSelectedModel(e.target.value)}
+                                                            className="mr-3 h-4 w-4 text-teal-600 focus:ring-teal-500 border-gray-300"
+                                                        />
+                                                        <span className="text-sm font-medium text-gray-700">Male Model</span>
+                                                    </label>
+                                                    
+                                                    <label className="flex items-center cursor-pointer">
+                                                        <input
+                                                            type="radio"
+                                                            name="model"
+                                                            value="female"
+                                                            checked={selectedModel === 'female'}
+                                                            onChange={(e) => setSelectedModel(e.target.value)}
+                                                            className="mr-3 h-4 w-4 text-teal-600 focus:ring-teal-500 border-gray-300"
+                                                        />
+                                                        <span className="text-sm font-medium text-gray-700">Female Model</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {/* Action Button */}
                                         <div className="space-y-3">
                                             <button
-                                                onClick={handleGenerateISL}
-                                                disabled={!selectedFile || !result || !transcriptResult || !translationResult || generating}
+                                                onClick={handleGenerateISLVideo}
+                                                disabled={!selectedFile || !result || !transcriptResult || !translationResult || generatingVideo}
                                                 className={`w-full px-4 py-3 rounded-lg font-medium transition-colors ${
-                                                    !selectedFile || !result || !transcriptResult || !translationResult || generating
+                                                    !selectedFile || !result || !transcriptResult || !translationResult || generatingVideo
                                                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                         : 'bg-teal-600 text-white hover:bg-teal-700'
                                                 }`}
                                             >
-                                                {generating ? 'Generating ISL Video...' : 'Generate ISL Video'}
+                                                {generatingVideo ? 'Generating ISL Video...' : 'Generate ISL Video'}
                                             </button>
                                         </div>
+
 
                                     </div>
 
@@ -947,53 +1081,103 @@ export default function AudioToISLPage() {
                                     <div className="space-y-6">
                                         <div>
                                             <h2 className="text-xl font-semibold text-gray-900 mb-2">ISL Video Output</h2>
-                                            <p className="text-sm text-gray-600">Generated Indian Sign Language video will appear here</p>
+                                            <p className="text-sm text-gray-600">
+                                                {videoGenerationResult 
+                                                    ? 'Generated Indian Sign Language video is ready for preview'
+                                                    : 'Generated Indian Sign Language video will appear here'
+                                                }
+                                            </p>
                                         </div>
                                         
                                         {/* Video Player Area */}
-                                        <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
+                                        {videoGenerationResult ? (
                                             <div className="space-y-4">
-                                                <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mx-auto">
-                                                    <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                                    </svg>
+                                                {/* Video Info */}
+                                                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                                    <p className="text-sm text-gray-600">
+                                                        Duration: {videoGenerationResult.video_duration?.toFixed(1)}s | 
+                                                        Signs Used: {videoGenerationResult.signs_used?.length} | 
+                                                        Signs Skipped: {videoGenerationResult.signs_skipped?.length}
+                                                    </p>
                                                 </div>
-                                                <div>
-                                                    <p className="text-lg font-medium text-gray-900">No ISL Video Generated</p>
-                                                    <p className="text-sm text-gray-500">Upload an audio file and click "Generate ISL Video" to create your sign language video</p>
+                                                
+                                                {/* Video Player */}
+                                                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                                    <video
+                                                        src={videoPreviewUrl}
+                                                        controls
+                                                        className="w-full rounded-lg"
+                                                        style={{ maxHeight: '400px' }}
+                                                        onLoadedData={(e) => {
+                                                            // Set initial playback rate when video loads
+                                                            (e.target as HTMLVideoElement).playbackRate = videoSpeed
+                                                        }}
+                                                    />
+                                                </div>
+                                                
+                                                {/* Video Speed Control */}
+                                                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <h4 className="text-sm font-medium text-gray-900 mb-2">Playback Speed</h4>
+                                                            <p className="text-xs text-gray-500">Adjust video playback speed</p>
+                                                        </div>
+                                                        <div className="flex items-center space-x-2">
+                                                            {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((speed) => (
+                                                                <button
+                                                                    key={speed}
+                                                                    onClick={() => handleVideoSpeedChange(speed)}
+                                                                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                                                                        videoSpeed === speed
+                                                                            ? 'bg-teal-600 text-white'
+                                                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                                    }`}
+                                                                >
+                                                                    {speed}x
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* Action Buttons */}
+                                                <div className="flex space-x-3">
+                                                    <button
+                                                        onClick={handleSaveISLVideo}
+                                                        disabled={videoSaved}
+                                                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                                                            videoSaved
+                                                                ? 'bg-green-600 text-white cursor-not-allowed'
+                                                                : 'bg-teal-600 text-white hover:bg-teal-700'
+                                                        }`}
+                                                    >
+                                                        {videoSaved ? 'Video Saved ✓' : 'Save Video'}
+                                                    </button>
+                                                    
+                                                    <button
+                                                        onClick={handleGenerateISLVideo}
+                                                        disabled={generatingVideo}
+                                                        className="px-4 py-2 rounded-lg font-medium bg-gray-600 text-white hover:bg-gray-700 transition-colors"
+                                                    >
+                                                        Regenerate Video
+                                                    </button>
                                                 </div>
                                             </div>
-                                        </div>
-
-                                        {/* Video Controls Placeholder */}
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center space-x-4">
-                                                    <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
-                                                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                                            <path d="M8 5v14l11-7z"/>
+                                        ) : (
+                                            <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
+                                                <div className="space-y-4">
+                                                    <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mx-auto">
+                                                        <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                                         </svg>
-                                                    </button>
-                                                    <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
-                                                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                                            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
-                                                        </svg>
-                                                    </button>
-                                                </div>
-                                                <div className="flex items-center space-x-2">
-                                                    <span className="text-sm text-gray-500">00:00</span>
-                                                    <div className="w-32 h-1 bg-gray-200 rounded-full"></div>
-                                                    <span className="text-sm text-gray-500">00:00</span>
-                                                </div>
-                                                <div className="flex items-center space-x-2">
-                                                    <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
-                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                                        </svg>
-                                                    </button>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-lg font-medium text-gray-900">No ISL Video Generated</p>
+                                                        <p className="text-sm text-gray-500">Upload an audio file and click "Generate ISL Video" to create your sign language video</p>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -1008,7 +1192,7 @@ export default function AudioToISLPage() {
                     <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
                         <div className="text-center">
                             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                                {detecting ? 'Detecting Language' : transcribing ? 'Transcribing Audio' : translating ? 'Translating to English' : 'Generating ISL Video'}
+                                {detecting ? 'Detecting Language' : transcribing ? 'Transcribing Audio' : translating ? 'Translating to English' : generatingVideo ? 'Generating ISL Video' : 'Processing...'}
                             </h3>
                             
                             {/* Progress Bar */}
@@ -1026,7 +1210,9 @@ export default function AudioToISLPage() {
                                                             ? 'bg-purple-500'
                                                             : translating
                                                                 ? 'bg-orange-500'
-                                                                : 'bg-teal-500'
+                                                                : generatingVideo
+                                                                    ? 'bg-teal-500'
+                                                                    : 'bg-gray-500'
                                         }`}
                                         style={{ width: `${progress.progress}%` }}
                                     ></div>
