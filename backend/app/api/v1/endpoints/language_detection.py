@@ -12,6 +12,8 @@ from app.core.config import settings
 router = APIRouter()
 
 # Configure Gemini API
+if not settings.GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY is not set. Please set it in your environment variables.")
 genai.configure(api_key=settings.GEMINI_API_KEY)
 
 # Supported audio formats
@@ -34,21 +36,39 @@ def detect_language_from_audio(audio_path: str) -> str:
     user_prompt = "Detect the spoken language in this audio. Reply only with the language name."
     
     try:
-        response = genai.generate_content(
-            model="gemini-2.0-flash-exp",
-            contents=[
-                {"role": "user", "parts": [
-                    # Include the audio
-                    audio_file,
-                    user_prompt
-                ]}
-            ]
-        )
+        # Use the correct API for current version of google-generativeai
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        
+        # Upload the audio file
+        audio_data = genai.upload_file(audio_file)
+        
+        # Generate content with the audio and prompt
+        response = model.generate_content([audio_data, user_prompt])
+        
+        # Check if response is valid
+        if not response or not response.text:
+            raise Exception("No response received from language detection API")
         
         # Response.text should contain the language name
-        return response.text.strip()
+        detected_language = response.text.strip()
+        
+        # Validate that we got a reasonable response
+        if len(detected_language) < 2 or len(detected_language) > 50:
+            raise Exception(f"Invalid language detection result: {detected_language}")
+        
+        return detected_language
+        
     except Exception as e:
-        raise Exception(f"Error detecting language: {str(e)}")
+        # Provide more specific error information
+        error_msg = str(e)
+        if "API key" in error_msg.lower():
+            raise Exception("Invalid or missing Google Gemini API key")
+        elif "quota" in error_msg.lower() or "limit" in error_msg.lower():
+            raise Exception("API quota exceeded. Please try again later")
+        elif "file" in error_msg.lower():
+            raise Exception("Error processing audio file")
+        else:
+            raise Exception(f"Error detecting language: {error_msg}")
 
 @router.post("/detect-language")
 async def detect_language(
