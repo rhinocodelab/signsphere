@@ -317,9 +317,9 @@ export default function TranslationsTablePage() {
                             </h3>
                             <Link href="/ai-generated-assets/isl-dataset" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                                 </svg>
-                                <span>ISL Dataset</span>
+                                <span>ISL Dictionary</span>
                             </Link>
                             <Link href="/ai-generated-assets/audio-to-isl" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -334,19 +334,9 @@ export default function TranslationsTablePage() {
                 {/* Main Content */}
                 <main className="flex-1 ml-64 p-6 min-h-screen pb-24">
                     <div className="max-w-6xl mx-auto">
-                        {/* Breadcrumb Navigation */}
-                        <nav className="flex items-center space-x-2 text-sm text-gray-500 mb-6">
-                            <Link href="/ai-generated-assets" className="hover:text-teal-600 transition-colors">
-                                AI Database
-                            </Link>
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                            <span className="text-gray-900 font-medium">Train Route Translations</span>
-                        </nav>
 
                         {/* Page Header */}
-                        <div className="mb-8">
+                        <div className="mb-8 pt-4">
                             <h1 className="text-3xl font-bold text-gray-900 mb-2">Train Route Translations</h1>
                             <p className="text-gray-600">Multilingual translations for train routes</p>
                         </div>

@@ -139,6 +139,19 @@ export default function AudioToISLPage() {
         'गुजराती भाषा': 'gu-IN'
     }
 
+    // Language code to native script mapping
+    const nativeScriptMapping: { [key: string]: string } = {
+        'en-IN': 'English',
+        'hi-IN': 'हिंदी',
+        'mr-IN': 'मराठी',
+        'gu-IN': 'ગુજરાતી'
+    }
+
+    // Function to get native script name from language code
+    const getNativeScriptName = (languageCode: string): string => {
+        return nativeScriptMapping[languageCode] || languageCode
+    }
+
     // Function to map detected language name to language code
     const mapLanguageNameToCode = (detectedLanguage: string): string | null => {
         if (!detectedLanguage) return null
@@ -856,9 +869,9 @@ export default function AudioToISLPage() {
                             </h3>
                             <Link href="/ai-generated-assets/isl-dataset" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                                 </svg>
-                                <span>ISL Dataset</span>
+                                <span>ISL Dictionary</span>
                             </Link>
                             <Link href="/ai-generated-assets/audio-to-isl" className="flex items-center space-x-3 px-3 py-2 bg-teal-50 text-teal-700 rounded-lg">
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -898,7 +911,7 @@ export default function AudioToISLPage() {
                                         
                                         {/* Audio Drop Zone */}
                                         <div
-                                            className={`border-2 border-dashed rounded-xl p-6 text-center transition-all duration-200 ${
+                                            className={`border-2 border-dashed rounded-xl p-4 text-center transition-all duration-200 ${
                                                 dragActive
                                                     ? 'border-teal-500 bg-teal-50 scale-105'
                                                     : 'border-gray-300 hover:border-teal-400 hover:bg-gray-50'
@@ -925,10 +938,19 @@ export default function AudioToISLPage() {
                                                     {/* Language Detection Result */}
                                                     {result && (
                                                         <div className="text-sm text-green-600 font-medium">
-                                                            Language: {result.detected_language}
                                                             {(() => {
                                                                 const languageCode = mapLanguageNameToCode(result.detected_language)
-                                                                return languageCode ? ` (${languageCode})` : ' (Unsupported)'
+                                                                if (languageCode) {
+                                                                    const nativeScript = getNativeScriptName(languageCode)
+                                                                    return (
+                                                                        <div className="space-y-1">
+                                                                            <div>Language: {nativeScript}</div>
+                                                                            <div className="text-xs text-gray-500">({result.detected_language})</div>
+                                                                        </div>
+                                                                    )
+                                                                } else {
+                                                                    return `Language: ${result.detected_language} (Unsupported)`
+                                                                }
                                                             })()}
                                                         </div>
                                                     )}
