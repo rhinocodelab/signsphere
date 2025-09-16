@@ -392,6 +392,30 @@ async def get_supported_models():
         "description": "Available AI models for ISL video generation"
     }
 
+@router.delete("/cleanup/{temp_video_id}")
+async def cleanup_temp_video_endpoint(temp_video_id: str):
+    """
+    Clean up temporary ISL video file
+    
+    Args:
+        temp_video_id: The temporary video ID to clean up
+    
+    Returns:
+        Success message
+    """
+    try:
+        cleanup_temp_video(temp_video_id)
+        return {
+            "success": True,
+            "message": f"Temporary video {temp_video_id} cleaned up successfully"
+        }
+    except Exception as e:
+        logger.error(f"Failed to cleanup temp video {temp_video_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to cleanup temporary video: {str(e)}"
+        )
+
 @router.get("/health")
 async def health_check():
     """Health check endpoint for ISL video generation service"""

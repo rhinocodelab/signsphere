@@ -728,6 +728,27 @@ export default function AudioToISLPage() {
         }
     }
 
+    const handleCleanupTempVideo = async (tempVideoId: string) => {
+        try {
+            const currentHost = window.location.hostname
+            const apiUrl = currentHost === 'localhost'
+                ? 'https://localhost:5001'
+                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
+
+            const response = await fetch(`${apiUrl}/api/v1/isl-video-generation/cleanup/${tempVideoId}`, {
+                method: 'DELETE'
+            })
+
+            if (response.ok) {
+                console.log(`Temporary video ${tempVideoId} cleaned up successfully`)
+            } else {
+                console.warn(`Failed to cleanup temporary video ${tempVideoId}`)
+            }
+        } catch (error) {
+            console.error('Cleanup error:', error)
+        }
+    }
+
     const handleVideoSpeedChange = (speed: number) => {
         setVideoSpeed(speed)
         // Apply speed to video element and restart playback
@@ -956,7 +977,13 @@ export default function AudioToISLPage() {
                                                     )}
                                                     
                                                     <button
-                                                        onClick={() => {
+                                                        onClick={async () => {
+                                                            // Clean up temporary video if it exists
+                                                            if (videoGenerationResult?.temp_video_id) {
+                                                                await handleCleanupTempVideo(videoGenerationResult.temp_video_id)
+                                                            }
+                                                            
+                                                            // Clear all state
                                                             setSelectedFile(null)
                                                             setResult(null)
                                                             setTranscriptResult(null)
@@ -966,6 +993,10 @@ export default function AudioToISLPage() {
                                                             setVideoPreviewUrl('')
                                                             setVideoSaved(false)
                                                             setVideoSpeed(1.0)
+                                                            setGeneratingVideo(false)
+                                                            setDetecting(false)
+                                                            setTranscribing(false)
+                                                            setTranslating(false)
                                                         }}
                                                         className="text-sm text-red-600 hover:text-red-800 font-medium"
                                                     >
@@ -1186,7 +1217,7 @@ export default function AudioToISLPage() {
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
+                                            <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-4 text-center flex flex-col items-center justify-center min-h-[290px]">
                                                 <div className="space-y-4">
                                                     <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mx-auto">
                                                         <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
