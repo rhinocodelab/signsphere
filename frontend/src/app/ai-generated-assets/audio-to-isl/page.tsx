@@ -52,6 +52,7 @@ export default function AudioToISLPage() {
     const [user, setUser] = useState<any>(null)
     const [showProfileDropdown, setShowProfileDropdown] = useState(false)
     const [selectedFile, setSelectedFile] = useState<File | null>(null)
+    const [audioUrl, setAudioUrl] = useState<string>('')
     const [detecting, setDetecting] = useState(false)
     const [generating, setGenerating] = useState(false)
     const [result, setResult] = useState<LanguageDetectionResult | null>(null)
@@ -76,6 +77,28 @@ export default function AudioToISLPage() {
     })
 
     const fileInputRef = useRef<HTMLInputElement>(null)
+
+    const clearAudio = () => {
+        setSelectedFile(null)
+        setAudioUrl('')
+        setResult(null)
+        setTranscriptResult(null)
+        setTranslationResult(null)
+        setTranslatedText('')
+        setVideoGenerationResult(null)
+        setVideoPreviewUrl('')
+        setVideoSaved(false)
+        
+        // Clear file input
+        if (fileInputRef.current) {
+            fileInputRef.current.value = ''
+        }
+        
+        // Revoke the object URL to free memory
+        if (audioUrl) {
+            URL.revokeObjectURL(audioUrl)
+        }
+    }
 
     // Language name to code mapping (English + Native Scripts)
     const languageMapping: { [key: string]: string } = {
@@ -202,6 +225,15 @@ export default function AudioToISLPage() {
         checkAuthentication()
     }, [router])
 
+    // Cleanup audio URL when component unmounts
+    useEffect(() => {
+        return () => {
+            if (audioUrl) {
+                URL.revokeObjectURL(audioUrl)
+            }
+        }
+    }, [audioUrl])
+
     const supportedFormats = [
         { name: 'WAV', mimeType: 'audio/wav', extension: '.wav' },
         { name: 'MP3', mimeType: 'audio/mpeg', extension: '.mp3' },
@@ -229,6 +261,10 @@ export default function AudioToISLPage() {
         setSelectedFile(file)
         setResult(null)
         setTranscriptResult(null)
+        
+        // Create audio URL for playback
+        const url = URL.createObjectURL(file)
+        setAudioUrl(url)
         
         // Automatically start language detection with the file directly
         setTimeout(() => {
@@ -591,7 +627,11 @@ export default function AudioToISLPage() {
     }
 
     const handleGenerateISLVideo = async () => {
-        if (!selectedFile || !result || !transcriptResult || !translationResult) {
+        // Check if all required processing is complete
+        const isProcessingComplete = selectedFile && result && transcriptResult && 
+            (translationResult || (result && mapLanguageNameToCode(result.detected_language) === 'en-IN'))
+        
+        if (!isProcessingComplete) {
             toast.error('Please complete audio processing first')
             return
         }
@@ -968,6 +1008,16 @@ export default function AudioToISLPage() {
                                                         <p className="text-sm text-gray-500">{formatFileSize(selectedFile.size)}</p>
                                                     </div>
                                                     
+                                                    {/* Audio Player */}
+                                                    {audioUrl && (
+                                                        <div className="w-full">
+                                                            <audio controls className="w-full">
+                                                                <source src={audioUrl} type={selectedFile.type} />
+                                                                Your browser does not support the audio element.
+                                                            </audio>
+                                                        </div>
+                                                    )}
+                                                    
                                                     {/* Language Detection Result */}
                                                     {result && (
                                                         <div className="text-sm text-green-600 font-medium">
@@ -995,15 +1045,8 @@ export default function AudioToISLPage() {
                                                                 await handleCleanupTempVideo(videoGenerationResult.temp_video_id)
                                                             }
                                                             
-                                                            // Clear all state
-                                                            setSelectedFile(null)
-                                                            setResult(null)
-                                                            setTranscriptResult(null)
-                                                            setTranslationResult(null)
-                                                            setTranslatedText('')
-                                                            setVideoGenerationResult(null)
-                                                            setVideoPreviewUrl('')
-                                                            setVideoSaved(false)
+                                                            // Clear all state using the clearAudio function
+                                                            clearAudio()
                                                             setVideoSpeed(1.0)
                                                             setGeneratingVideo(false)
                                                             setDetecting(false)
@@ -1124,20 +1167,34 @@ export default function AudioToISLPage() {
                                             </div>
                                         )}
 
-                                        {/* Action Button */}
-                                        <div className="space-y-3">
-                                            <button
-                                                onClick={handleGenerateISLVideo}
-                                                disabled={!selectedFile || !result || !transcriptResult || !translationResult || generatingVideo}
-                                                className={`w-full px-4 py-3 rounded-lg font-medium transition-colors ${
-                                                    !selectedFile || !result || !transcriptResult || !translationResult || generatingVideo
-                                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                                        : 'bg-teal-600 text-white hover:bg-teal-700'
-                                                }`}
-                                            >
-                                                {generatingVideo ? 'Generating ISL Video...' : 'Generate ISL Video'}
-                                            </button>
-                                        </div>
+
+                                        {/* Action Button - Only show when all processing is complete */}
+                                        {(() => {
+                                            // Check if all required processing is complete
+                                            const isProcessingComplete = selectedFile && result && transcriptResult && 
+                                                (translationResult || (result && mapLanguageNameToCode(result.detected_language) === 'en-IN'))
+                                            
+                                            // Only render the button when processing is complete
+                                            if (!isProcessingComplete) {
+                                                return null
+                                            }
+                                            
+                                            return (
+                                                <div className="space-y-3">
+                                                    <button
+                                                        onClick={handleGenerateISLVideo}
+                                                        disabled={generatingVideo}
+                                                        className={`w-full px-4 py-3 rounded-lg font-medium transition-colors ${
+                                                            generatingVideo
+                                                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                                : 'bg-teal-600 text-white hover:bg-teal-700'
+                                                        }`}
+                                                    >
+                                                        {generatingVideo ? 'Generating ISL Video...' : 'Generate ISL Video'}
+                                                    </button>
+                                                </div>
+                                            )
+                                        })()}
 
 
                                     </div>
