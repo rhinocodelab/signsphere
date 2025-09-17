@@ -20,6 +20,7 @@ interface TrainRoute {
 }
 
 interface SelectedRoute {
+    id: number
     train_number: string
     train_name: string
     from_station: string
@@ -43,6 +44,38 @@ export default function DashboardPage() {
     const [loadingRoutes, setLoadingRoutes] = useState(false)
     const [announcementCategories, setAnnouncementCategories] = useState<string[]>([])
     const [selectedRoute, setSelectedRoute] = useState<SelectedRoute | null>(null)
+
+    // Announcement generation functionality
+    const [showAnnouncementModal, setShowAnnouncementModal] = useState(false)
+    const [announcementProgress, setAnnouncementProgress] = useState({
+        step: '',
+        progress: 0,
+        isComplete: false,
+        error: null as string | null
+    })
+    const [generatedAnnouncement, setGeneratedAnnouncement] = useState('')
+    const [generatedAnnouncements, setGeneratedAnnouncements] = useState<{
+        english: string
+        hindi: string
+        marathi: string
+        gujarati: string
+    } | null>(null)
+    const [announcementVideoUrl, setAnnouncementVideoUrl] = useState('')
+    const [isGeneratingAnnouncement, setIsGeneratingAnnouncement] = useState(false)
+    const [announcementTemplates, setAnnouncementTemplates] = useState<any[]>([])
+    const [loadingTemplates, setLoadingTemplates] = useState(false)
+    const [showModelSelectionModal, setShowModelSelectionModal] = useState(false)
+    const [selectedAIModel, setSelectedAIModel] = useState<'male' | 'female' | null>(null)
+    const [currentTempVideoId, setCurrentTempVideoId] = useState<string | null>(null)
+    const [playSpeed, setPlaySpeed] = useState(1.0)
+
+    const handlePlaySpeedChange = (speed: number) => {
+        setPlaySpeed(speed)
+        const video = document.querySelector('video')
+        if (video) {
+            video.playbackRate = speed
+        }
+    }
 
     useEffect(() => {
         const checkAuthentication = async () => {
@@ -90,7 +123,7 @@ export default function DashboardPage() {
         }
 
         checkAuthentication()
-        fetchAnnouncementCategories()
+        fetchAnnouncementTemplates()
     }, [router])
 
     // Close dropdown when clicking outside
@@ -153,30 +186,6 @@ export default function DashboardPage() {
         }
     }
 
-    const fetchAnnouncementCategories = async () => {
-        try {
-            const currentHost = window.location.hostname
-            const apiUrl = currentHost === 'localhost'
-                ? 'https://localhost:5001'
-                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
-
-            const response = await fetch(`${apiUrl}/api/v1/announcement-templates/categories`, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            })
-
-            if (response.ok) {
-                const categories = await response.json()
-                setAnnouncementCategories(categories)
-            } else {
-                console.error('Failed to fetch announcement categories')
-            }
-        } catch (error) {
-            console.error('Error fetching announcement categories:', error)
-        }
-    }
 
     const handlePickRouteClick = () => {
         setShowPickRouteModal(true)
@@ -185,6 +194,7 @@ export default function DashboardPage() {
 
     const handleRouteSelect = (route: TrainRoute) => {
         setSelectedRoute({
+            id: route.id,
             train_number: route.train_number,
             train_name: route.train_name,
             from_station: route.from_station,
@@ -202,6 +212,275 @@ export default function DashboardPage() {
                 ...selectedRoute,
                 [field]: value
             })
+        }
+    }
+
+    const handleCleanupTempVideo = async (tempVideoId: string) => {
+        try {
+            const currentHost = window.location.hostname
+            const apiUrl = currentHost === 'localhost'
+                ? 'https://localhost:5001'
+                : (process.env.NEXT_PUBLIC_API_URL || `https://${currentHost}:5001`)
+
+            const response = await fetch(`${apiUrl}/api/v1/isl-video-generation/cleanup/${tempVideoId}`, {
+                method: 'DELETE'
+            })
+
+            if (response.ok) {
+                console.log(`Temporary video ${tempVideoId} cleaned up successfully`)
+            } else {
+                console.warn(`Failed to cleanup temporary video ${tempVideoId}`)
+            }
+        } catch (error) {
+            console.error('Video cleanup error:', error)
+        }
+    }
+
+    const handleCloseAnnouncementModal = async () => {
+        // Clean up generated ISL video if it exists
+        if (currentTempVideoId) {
+            await handleCleanupTempVideo(currentTempVideoId)
+        }
+        
+        // Reset all announcement-related states
+        setShowAnnouncementModal(false)
+        setAnnouncementProgress({
+            step: '',
+            progress: 0,
+            isComplete: false,
+            error: null
+        })
+        setGeneratedAnnouncement('')
+        setGeneratedAnnouncements(null)
+        setAnnouncementVideoUrl('')
+        setCurrentTempVideoId(null)
+        setSelectedAIModel(null)
+    }
+
+    const handleGenerateAnnouncement = () => {
+        if (!selectedRoute || !selectedRoute.announcement_category) {
+            toast.error('Please select an announcement category')
+            return
+        }
+
+        // Show AI model selection modal first
+        setShowModelSelectionModal(true)
+    }
+
+    const handleModelSelection = async (model: 'male' | 'female') => {
+        if (!selectedRoute) return
+
+        setSelectedAIModel(model)
+        setShowModelSelectionModal(false)
+        
+        setIsGeneratingAnnouncement(true)
+        setShowAnnouncementModal(true)
+        setAnnouncementProgress({
+            step: 'Preparing announcement...',
+            progress: 0,
+            isComplete: false,
+            error: null
+        })
+
+        try {
+            // Step 1: Generate announcement text
+            setAnnouncementProgress({
+                step: 'Generating announcement text...',
+                progress: 20,
+                isComplete: false,
+                error: null
+            })
+
+            const announcementTexts = await generateAnnouncementTexts(selectedRoute)
+            setGeneratedAnnouncements(announcementTexts)
+            setGeneratedAnnouncement(announcementTexts.english) // Keep for backward compatibility
+
+            // Step 2: Generate ISL video
+            setAnnouncementProgress({
+                step: `Generating ISL video with ${model === 'male' ? 'Male' : 'Female'} AI model...`,
+                progress: 50,
+                isComplete: false,
+                error: null
+            })
+
+            const currentHost = window.location.hostname
+            const apiUrl = currentHost === 'localhost'
+                ? 'https://localhost:5001'
+                : (process.env.NEXT_PUBLIC_API_URL || `https://${currentHost}:5001`)
+
+            const formData = new FormData()
+            formData.append('text', announcementTexts.english) // Use English text for ISL video generation
+            formData.append('model_type', model) // Use selected AI model
+            formData.append('user_id', user?.id || '1')
+
+            const response = await fetch(`${apiUrl}/api/v1/isl-video-generation/generate-form`, {
+                method: 'POST',
+                body: formData
+            })
+
+            if (!response.ok) {
+                throw new Error(`ISL video generation failed: ${response.statusText}`)
+            }
+
+            const result = await response.json()
+
+            // Store temp video ID for cleanup
+            setCurrentTempVideoId(result.temp_video_id)
+
+            // Step 3: Get video URL
+            setAnnouncementProgress({
+                step: 'Preparing video for playback...',
+                progress: 80,
+                isComplete: false,
+                error: null
+            })
+
+            const videoUrl = `${apiUrl}${result.preview_url}`
+            setAnnouncementVideoUrl(videoUrl)
+
+            // Step 4: Complete
+            setAnnouncementProgress({
+                step: 'Announcement ready!',
+                progress: 100,
+                isComplete: true,
+                error: null
+            })
+
+            toast.success('Announcement generated successfully!')
+
+        } catch (error) {
+            console.error('Announcement generation error:', error)
+            setAnnouncementProgress({
+                step: 'Generation failed',
+                progress: 0,
+                isComplete: false,
+                error: error instanceof Error ? error.message : 'Unknown error occurred'
+            })
+            toast.error('Failed to generate announcement')
+        } finally {
+            setIsGeneratingAnnouncement(false)
+        }
+    }
+
+    const fetchAnnouncementTemplates = async () => {
+        try {
+            setLoadingTemplates(true)
+            const currentHost = window.location.hostname
+            const apiUrl = currentHost === 'localhost'
+                ? 'https://localhost:5001'
+                : (process.env.NEXT_PUBLIC_API_URL || `https://${currentHost}:5001`)
+
+            // Fetch all templates
+            const templatesResponse = await fetch(`${apiUrl}/api/v1/announcement-templates/`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+
+            if (templatesResponse.ok) {
+                const templates = await templatesResponse.json()
+                setAnnouncementTemplates(templates)
+                
+                // Extract unique categories
+                const categories = [...new Set(templates.map((template: any) => template.category))] as string[]
+                setAnnouncementCategories(categories)
+            } else {
+                console.error('Failed to fetch announcement templates')
+                setAnnouncementCategories([])
+                toast.error('Failed to load announcement templates. Please try again later.')
+            }
+        } catch (error) {
+            console.error('Error fetching announcement templates:', error)
+            setAnnouncementCategories([])
+            toast.error('Failed to load announcement templates. Please check your connection.')
+        } finally {
+            setLoadingTemplates(false)
+        }
+    }
+
+    const generateAnnouncementTexts = async (route: SelectedRoute): Promise<{
+        english: string
+        hindi: string
+        marathi: string
+        gujarati: string
+    }> => {
+        // Find template from database
+        const template = announcementTemplates.find(t => t.category === route.announcement_category)
+        
+        if (!template) {
+            throw new Error(`No announcement template found for category: ${route.announcement_category}`)
+        }
+
+        // Fetch train route translations
+        let translations = null
+        try {
+            const currentHost = window.location.hostname
+            const apiUrl = currentHost === 'localhost'
+                ? 'https://localhost:5001'
+                : (process.env.NEXT_PUBLIC_API_URL || `https://${currentHost}:5001`)
+
+            // Fetch translations for this train route using the ID
+            const translationResponse = await fetch(`${apiUrl}/api/v1/train-route-translations/route/${route.id}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+
+            if (translationResponse.ok) {
+                translations = await translationResponse.json()
+            }
+        } catch (error) {
+            console.warn('Failed to fetch train route translations:', error)
+            // Continue with English values if translation fetch fails
+        }
+
+        // Create language-specific replacements
+        const createReplacements = (language: 'en' | 'hi' | 'mr' | 'gu') => {
+            if (translations && language !== 'en') {
+                return {
+                    train_number: route.train_number,
+                    train_name: language === 'hi' ? translations.train_name_hi || route.train_name :
+                               language === 'mr' ? translations.train_name_mr || route.train_name :
+                               language === 'gu' ? translations.train_name_gu || route.train_name :
+                               route.train_name,
+                    start_station: language === 'hi' ? translations.from_station_hi || route.from_station :
+                                  language === 'mr' ? translations.from_station_mr || route.from_station :
+                                  language === 'gu' ? translations.from_station_gu || route.from_station :
+                                  route.from_station,
+                    end_station: language === 'hi' ? translations.to_station_hi || route.to_station :
+                                language === 'mr' ? translations.to_station_mr || route.to_station :
+                                language === 'gu' ? translations.to_station_gu || route.to_station :
+                                route.to_station,
+                    platform: route.platform
+                }
+            } else {
+                // Use English values
+                return {
+                    train_number: route.train_number,
+                    train_name: route.train_name,
+                    start_station: route.from_station,
+                    end_station: route.to_station,
+                    platform: route.platform
+                }
+            }
+        }
+
+        const replacePlaceholders = (text: string, replacements: any) => {
+            return text
+                .replace('{train_number}', replacements.train_number)
+                .replace('{train_name}', replacements.train_name)
+                .replace('{start_station}', replacements.start_station)
+                .replace('{end_station}', replacements.end_station)
+                .replace('{platform}', replacements.platform)
+        }
+
+        return {
+            english: template.english_template ? replacePlaceholders(template.english_template, createReplacements('en')) : '',
+            hindi: template.hindi_template ? replacePlaceholders(template.hindi_template, createReplacements('hi')) : '',
+            marathi: template.marathi_template ? replacePlaceholders(template.marathi_template, createReplacements('mr')) : '',
+            gujarati: template.gujarati_template ? replacePlaceholders(template.gujarati_template, createReplacements('gu')) : ''
         }
     }
 
@@ -506,6 +785,7 @@ export default function DashboardPage() {
                                                     if (train.routeData) {
                                                         // This is from search results, use the stored route data
                                                         setSelectedRoute({
+                                                            id: train.routeData.id,
                                                             train_number: train.routeData.train_number,
                                                             train_name: train.routeData.train_name,
                                                             from_station: train.routeData.from_station,
@@ -565,6 +845,7 @@ export default function DashboardPage() {
                                                 <th className="text-left py-3 px-4 font-medium text-black">To Station</th>
                                                 <th className="text-left py-3 px-4 font-medium text-black">Platform</th>
                                                 <th className="text-left py-3 px-4 font-medium text-black">Announcement Category</th>
+                                                <th className="text-left py-3 px-4 font-medium text-black">Action</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -631,8 +912,11 @@ export default function DashboardPage() {
                                                         value={selectedRoute.announcement_category}
                                                         onChange={(e) => handleSelectedRouteChange('announcement_category', e.target.value)}
                                                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-black"
+                                                        disabled={loadingTemplates}
                                                     >
-                                                        <option value="">Select Category</option>
+                                                        <option value="">
+                                                            {loadingTemplates ? 'Loading categories...' : 'Select Category'}
+                                                        </option>
                                                         {announcementCategories.map((category) => (
                                                             <option key={category} value={category}>
                                                                 {category}
@@ -640,9 +924,46 @@ export default function DashboardPage() {
                                                         ))}
                                                     </select>
                                                 </td>
+                                                <td className="py-3 px-4">
+                                                    <button
+                                                        onClick={handleGenerateAnnouncement}
+                                                        disabled={!selectedRoute.announcement_category || isGeneratingAnnouncement || announcementTemplates.length === 0}
+                                                        className={`p-2 rounded-lg transition-colors ${
+                                                            !selectedRoute.announcement_category || isGeneratingAnnouncement || announcementTemplates.length === 0
+                                                                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                                                : 'bg-teal-600 text-white hover:bg-teal-700'
+                                                        }`}
+                                                        title={
+                                                            announcementTemplates.length === 0 
+                                                                ? "No announcement templates available" 
+                                                                : "Generate Announcement"
+                                                        }
+                                                    >
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                                                        </svg>
+                                                    </button>
+                                                </td>
                                             </tr>
                                         </tbody>
                                     </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* No Templates Available Message */}
+                        {announcementTemplates.length === 0 && !loadingTemplates && (
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                                <div className="flex items-center">
+                                    <svg className="w-5 h-5 text-yellow-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                    </svg>
+                                    <div>
+                                        <h3 className="text-sm font-medium text-yellow-800">No Announcement Templates Available</h3>
+                                        <p className="text-sm text-yellow-700 mt-1">
+                                            Please add announcement templates in the Announcement Templates section to generate announcements.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -802,6 +1123,291 @@ export default function DashboardPage() {
                                     ))}
                                 </div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Announcement Generation Modal */}
+            {showAnnouncementModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-7xl w-full mx-4 max-h-[90vh] overflow-hidden">
+                        {/* Header */}
+                        <div className="flex justify-between items-center p-6 border-b border-gray-200">
+                            <h2 className="text-2xl font-bold text-gray-900">Announcement Generation</h2>
+                            <button
+                                onClick={handleCloseAnnouncementModal}
+                                className="text-gray-400 hover:text-gray-600 text-sm font-medium"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        {/* Two Panel Layout */}
+                        <div className="flex h-[calc(90vh-120px)]">
+                            {/* Left Panel - Multi-language Announcements */}
+                            <div className="w-1/2 p-6 border-r border-gray-200 overflow-y-auto">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">Generated Announcements</h3>
+                                
+                                {generatedAnnouncements ? (
+                                    <div className="space-y-4">
+                                        {/* English */}
+                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                            <div className="flex items-center mb-2">
+                                                <span className="text-sm font-medium text-blue-800 bg-blue-100 px-2 py-1 rounded">English</span>
+                                            </div>
+                                            <p className="text-gray-700 leading-relaxed">{generatedAnnouncements.english}</p>
+                                        </div>
+
+                                        {/* Hindi */}
+                                        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                                            <div className="flex items-center mb-2">
+                                                <span className="text-sm font-medium text-orange-800 bg-orange-100 px-2 py-1 rounded">हिंदी (Hindi)</span>
+                                            </div>
+                                            <p className="text-gray-700 leading-relaxed">{generatedAnnouncements.hindi || 'Translation not available'}</p>
+                                        </div>
+
+                                        {/* Marathi */}
+                                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                            <div className="flex items-center mb-2">
+                                                <span className="text-sm font-medium text-green-800 bg-green-100 px-2 py-1 rounded">मराठी (Marathi)</span>
+                                            </div>
+                                            <p className="text-gray-700 leading-relaxed">{generatedAnnouncements.marathi || 'Translation not available'}</p>
+                                        </div>
+
+                                        {/* Gujarati */}
+                                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                                            <div className="flex items-center mb-2">
+                                                <span className="text-sm font-medium text-purple-800 bg-purple-100 px-2 py-1 rounded">ગુજરાતી (Gujarati)</span>
+                                            </div>
+                                            <p className="text-gray-700 leading-relaxed">{generatedAnnouncements.gujarati || 'Translation not available'}</p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-8">
+                                        <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        <p className="text-gray-500">No announcements generated yet</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Right Panel - ISL Video Generation */}
+                            <div className="w-1/2 p-6 overflow-y-auto">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">ISL Video Generation</h3>
+                                
+                                {/* Progress Section */}
+                                {!announcementProgress.isComplete && !announcementProgress.error && (
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between text-sm text-gray-600">
+                                                <span>{announcementProgress.step}</span>
+                                                <span>{announcementProgress.progress}%</span>
+                                            </div>
+                                            <div className="w-full bg-gray-200 rounded-full h-2">
+                                                <div
+                                                    className="bg-teal-600 h-2 rounded-full transition-all duration-500"
+                                                    style={{ width: `${announcementProgress.progress}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                        <p className="text-sm text-gray-500">
+                                            Please wait while we generate your ISL video...
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Error Section */}
+                                {announcementProgress.error && (
+                                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                                        <div className="flex items-center">
+                                            <svg className="w-5 h-5 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <h3 className="text-lg font-semibold text-red-800">Generation Failed</h3>
+                                        </div>
+                                        <p className="text-red-700 mt-2">{announcementProgress.error}</p>
+                                        <button
+                                            onClick={handleGenerateAnnouncement}
+                                            className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                                        >
+                                            Try Again
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Video Player Section */}
+                                {announcementProgress.isComplete && announcementVideoUrl && (
+                                    <div className="space-y-4">
+                                        <div className="bg-gray-900 rounded-lg p-4">
+                                            <video
+                                                src={announcementVideoUrl}
+                                                controls
+                                                className="w-full rounded-lg"
+                                                style={{ maxHeight: '400px' }}
+                                                autoPlay
+                                            />
+                                        </div>
+                                        
+                                        {/* Play Speed Control */}
+                                        <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <label className="text-sm font-medium text-gray-700">Play Speed</label>
+                                                <span className="text-sm text-gray-500">{playSpeed}x</span>
+                                            </div>
+                                            <div className="flex space-x-2">
+                                                {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((speed) => (
+                                                    <button
+                                                        key={speed}
+                                                        onClick={() => handlePlaySpeedChange(speed)}
+                                                        className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                                                            playSpeed === speed
+                                                                ? 'bg-teal-600 text-white'
+                                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                        }`}
+                                                    >
+                                                        {speed}x
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex space-x-3">
+                                            <button
+                                                onClick={() => {
+                                                    const video = document.querySelector('video')
+                                                    if (video) {
+                                                        video.play()
+                                                    }
+                                                }}
+                                                className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"
+                                            >
+                                                Play Again
+                                            </button>
+                                            <button
+                                                onClick={async () => {
+                                                    // Clean up current video before generating new one
+                                                    if (currentTempVideoId) {
+                                                        await handleCleanupTempVideo(currentTempVideoId)
+                                                    }
+                                                    setShowAnnouncementModal(false)
+                                                    setShowModelSelectionModal(true)
+                                                }}
+                                                disabled={isGeneratingAnnouncement}
+                                                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+                                            >
+                                                Generate New
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Empty State */}
+                                {!announcementProgress.isComplete && !announcementProgress.error && !announcementVideoUrl && (
+                                    <div className="text-center py-8">
+                                        <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        </svg>
+                                        <p className="text-gray-500">ISL video will appear here after generation</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* AI Model Selection Modal */}
+            {showModelSelectionModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+                        <div className="p-6">
+                            {/* Header */}
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-xl font-semibold text-gray-900">Select AI Model</h2>
+                                <button
+                                    onClick={() => setShowModelSelectionModal(false)}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            {/* Content */}
+                            <div className="space-y-4">
+                                <p className="text-gray-600">
+                                    Choose the AI model for generating the ISL video announcement:
+                                </p>
+
+                                {/* Model Selection */}
+                                <div className="space-y-3">
+                                    <label className="flex items-center p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                                        <input
+                                            type="radio"
+                                            name="aiModel"
+                                            value="male"
+                                            onChange={() => setSelectedAIModel('male')}
+                                            className="mr-3 h-4 w-4 text-teal-600 focus:ring-teal-500 border-gray-300"
+                                        />
+                                        <div className="flex items-center">
+                                            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                </svg>
+                                            </div>
+                                            <div>
+                                                <div className="font-medium text-gray-900">Male Model</div>
+                                                <div className="text-sm text-gray-500">Generate ISL video with male AI model</div>
+                                            </div>
+                                        </div>
+                                    </label>
+
+                                    <label className="flex items-center p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                                        <input
+                                            type="radio"
+                                            name="aiModel"
+                                            value="female"
+                                            onChange={() => setSelectedAIModel('female')}
+                                            className="mr-3 h-4 w-4 text-teal-600 focus:ring-teal-500 border-gray-300"
+                                        />
+                                        <div className="flex items-center">
+                                            <div className="w-10 h-10 bg-pink-100 rounded-full flex items-center justify-center mr-3">
+                                                <svg className="w-6 h-6 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                </svg>
+                                            </div>
+                                            <div>
+                                                <div className="font-medium text-gray-900">Female Model</div>
+                                                <div className="text-sm text-gray-500">Generate ISL video with female AI model</div>
+                                            </div>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex space-x-3 pt-4">
+                                    <button
+                                        onClick={() => setShowModelSelectionModal(false)}
+                                        className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={() => selectedAIModel && handleModelSelection(selectedAIModel)}
+                                        disabled={!selectedAIModel}
+                                        className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                                            selectedAIModel
+                                                ? 'bg-teal-600 text-white hover:bg-teal-700'
+                                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                        }`}
+                                    >
+                                        Generate Announcement
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

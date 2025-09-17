@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Form
 from fastapi.responses import FileResponse
 import os
 import subprocess
@@ -295,6 +295,52 @@ async def generate_isl_video(request: VideoGenerationRequest):
         raise
     except Exception as e:
         logger.error(f"Video generation error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Video generation failed: {str(e)}"
+        )
+
+@router.post("/generate-form", response_model=VideoGenerationResponse)
+async def generate_isl_video_form(
+    text: str = Form(...),
+    model_type: str = Form(...),
+    user_id: str = Form(...)
+):
+    """
+    Generate ISL video by stitching individual sign videos (FormData version)
+    
+    Args:
+        text: Text to convert to ISL video
+        model_type: AI model type ("male" or "female")
+        user_id: User ID for tracking
+    
+    Returns:
+        VideoGenerationResponse with temp video ID and preview URL
+    """
+    try:
+        # Convert user_id to int
+        try:
+            user_id_int = int(user_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid user_id format"
+            )
+        
+        # Create VideoGenerationRequest object
+        request = VideoGenerationRequest(
+            text=text,
+            model=model_type,
+            user_id=user_id_int
+        )
+        
+        # Call the existing generate function
+        return await generate_isl_video(request)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Form video generation error: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Video generation failed: {str(e)}"
