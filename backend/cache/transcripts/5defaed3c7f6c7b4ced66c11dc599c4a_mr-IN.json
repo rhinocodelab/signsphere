@@ -1,0 +1,126 @@
+{
+  "transcript": "\u0915\u0943\u092a\u092f\u093e \u0932\u0915\u094d\u0937 \u0926\u094d\u092f\u093e \u0917\u093e\u0921\u0940 \u0928\u0902\u092c\u0930 12951 \u092e\u0941\u0902\u092c\u0908 \u0938\u0947\u0902\u091f\u094d\u0930\u0932 \u0935\u0930\u0942\u0928 \u0928\u0935\u0940 \u0926\u093f\u0932\u094d\u0932\u0940\u0932\u093e \u091c\u093e\u0923\u093e\u0930\u0940 \u0930\u093e\u091c\u0927\u093e\u0928\u0940 \u0938\u0941\u092a\u0930\u092b\u093e\u0938\u094d\u091f \u090f\u0915\u094d\u0938\u092a\u094d\u0930\u0947\u0938 \u0925\u094b\u0921\u094d\u092f\u093e\u091a \u0935\u0947\u0933\u093e\u0924 \u092a\u094d\u0932\u0945\u091f\u092b\u0949\u0930\u094d\u092e \u0915\u094d\u0930\u092e\u093e\u0902\u0915 \u090f\u0915 \u0935\u0930 \u092f\u0947",
+  "confidence": 0.8565065264701843,
+  "duration": 15.139410430839002,
+  "word_count": 22,
+  "word_time_offsets": [
+    {
+      "word": "\u0915\u0943\u092a\u092f\u093e",
+      "start_time": 0.0,
+      "end_time": 1.0
+    },
+    {
+      "word": "\u0932\u0915\u094d\u0937",
+      "start_time": 1.0,
+      "end_time": 1.2
+    },
+    {
+      "word": "\u0926\u094d\u092f\u093e",
+      "start_time": 1.2,
+      "end_time": 1.4
+    },
+    {
+      "word": "\u0917\u093e\u0921\u0940",
+      "start_time": 1.4,
+      "end_time": 2.0
+    },
+    {
+      "word": "\u0928\u0902\u092c\u0930",
+      "start_time": 2.0,
+      "end_time": 2.5
+    },
+    {
+      "word": "12951",
+      "start_time": 2.5,
+      "end_time": 5.2
+    },
+    {
+      "word": "\u092e\u0941\u0902\u092c\u0908",
+      "start_time": 5.2,
+      "end_time": 6.1
+    },
+    {
+      "word": "\u0938\u0947\u0902\u091f\u094d\u0930\u0932",
+      "start_time": 6.1,
+      "end_time": 6.7
+    },
+    {
+      "word": "\u0935\u0930\u0942\u0928",
+      "start_time": 6.7,
+      "end_time": 7.2
+    },
+    {
+      "word": "\u0928\u0935\u0940",
+      "start_time": 7.2,
+      "end_time": 7.6
+    },
+    {
+      "word": "\u0926\u093f\u0932\u094d\u0932\u0940\u0932\u093e",
+      "start_time": 7.6,
+      "end_time": 8.0
+    },
+    {
+      "word": "\u091c\u093e\u0923\u093e\u0930\u0940",
+      "start_time": 8.0,
+      "end_time": 8.7
+    },
+    {
+      "word": "\u0930\u093e\u091c\u0927\u093e\u0928\u0940",
+      "start_time": 8.7,
+      "end_time": 9.9
+    },
+    {
+      "word": "\u0938\u0941\u092a\u0930\u092b\u093e\u0938\u094d\u091f",
+      "start_time": 9.9,
+      "end_time": 10.7
+    },
+    {
+      "word": "\u090f\u0915\u094d\u0938\u092a\u094d\u0930\u0947\u0938",
+      "start_time": 10.7,
+      "end_time": 11.0
+    },
+    {
+      "word": "\u0925\u094b\u0921\u094d\u092f\u093e\u091a",
+      "start_time": 11.0,
+      "end_time": 11.9
+    },
+    {
+      "word": "\u0935\u0947\u0933\u093e\u0924",
+      "start_time": 11.9,
+      "end_time": 12.3
+    },
+    {
+      "word": "\u092a\u094d\u0932\u0945\u091f\u092b\u0949\u0930\u094d\u092e",
+      "start_time": 12.3,
+      "end_time": 12.7
+    },
+    {
+      "word": "\u0915\u094d\u0930\u092e\u093e\u0902\u0915",
+      "start_time": 12.7,
+      "end_time": 13.3
+    },
+    {
+      "word": "\u090f\u0915",
+      "start_time": 13.3,
+      "end_time": 14.3
+    },
+    {
+      "word": "\u0935\u0930",
+      "start_time": 14.3,
+      "end_time": 14.8
+    },
+    {
+      "word": "\u092f\u0947",
+      "start_time": 14.8,
+      "end_time": 15.0
+    }
+  ],
+  "audio_info": {
+    "sample_rate": 11025,
+    "duration": 15.139410430839002,
+    "file_extension": "aac",
+    "encoding": 8,
+    "channels": 1,
+    "file_size": 126325
+  }
+}

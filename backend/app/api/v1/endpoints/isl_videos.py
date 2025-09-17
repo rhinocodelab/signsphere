@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
 from typing import List, Optional
 import os
 import subprocess
@@ -516,3 +517,143 @@ def stream_video(video_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Error in stream_video: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/sync", response_model=dict)
+async def sync_isl_videos(
+    model_type: str = Form(...),
+    force_reprocess: bool = Form(False),
+    db: Session = Depends(get_db)
+):
+    """
+    Sync ISL videos from file system with database
+    Scans the public/videos/isl-videos/{model_type}-model folders
+    and processes any new or updated videos
+    """
+    try:
+        # Validate model type
+        if model_type not in ['male', 'female']:
+            raise HTTPException(status_code=400, detail="model_type must be 'male' or 'female'")
+        
+        # Get the public videos path
+        base_path = get_public_videos_path()
+        model_path = base_path / f"{model_type}-model"
+        
+        print(f"🔍 Sync Debug - Base path: {base_path}")
+        print(f"🔍 Sync Debug - Model path: {model_path}")
+        print(f"🔍 Sync Debug - Model path exists: {model_path.exists()}")
+        
+        if not model_path.exists():
+            return {
+                "success": False,
+                "message": f"Model path does not exist: {model_path}",
+                "processed": 0,
+                "errors": []
+            }
+        
+        # Scan folders
+        folders_to_process = []
+        all_folders = list(model_path.iterdir())
+        print(f"🔍 Sync Debug - Found {len(all_folders)} items in model path")
+        
+        for folder in all_folders:
+            print(f"🔍 Sync Debug - Checking item: {folder.name} (is_dir: {folder.is_dir()})")
+            if folder.is_dir():
+                # Check if folder name matches expected pattern
+                expected_video_file = folder / f"{folder.name}.mp4"
+                print(f"🔍 Sync Debug - Expected video file: {expected_video_file} (exists: {expected_video_file.exists()})")
+                if expected_video_file.exists():
+                    folders_to_process.append({
+                        "folder_name": folder.name,
+                        "folder_path": str(folder),
+                        "video_path": str(expected_video_file)
+                    })
+                    print(f"✅ Sync Debug - Added folder to process: {folder.name}")
+        
+        print(f"🔍 Sync Debug - Total folders to process: {len(folders_to_process)}")
+        
+        if not folders_to_process:
+            return {
+                "success": True,
+                "message": f"No valid video folders found in {model_path}",
+                "processed": 0,
+                "errors": []
+            }
+        
+        # Process each folder
+        processed_count = 0
+        errors = []
+        video_service = get_isl_video_service(db)
+        
+        for folder_info in folders_to_process:
+            try:
+                folder_name = folder_info["folder_name"]
+                video_path = folder_info["video_path"]
+                
+                print(f"🔍 Sync Debug - Processing folder: {folder_name}")
+                print(f"🔍 Sync Debug - Video path: {video_path}")
+                
+                # Check if video already exists in database
+                existing_video = db.query(ISLVideoModel).filter(
+                    and_(
+                        ISLVideoModel.video_path == video_path,
+                        ISLVideoModel.model_type == model_type
+                    )
+                ).first()
+                
+                print(f"🔍 Sync Debug - Existing video found: {existing_video is not None}")
+                print(f"🔍 Sync Debug - Force reprocess: {force_reprocess}")
+                
+                # Skip if exists and not forcing reprocess
+                if existing_video and not force_reprocess:
+                    print(f"⏭️ Sync Debug - Skipping {folder_name} (already exists)")
+                    continue
+                
+                # Get file info
+                file_size = os.path.getsize(video_path)
+                filename = f"{folder_name}.mp4"
+                
+                # Create or update video record
+                if existing_video:
+                    # Update existing record
+                    update_data = ISLVideoUpdate(
+                        file_size=file_size,
+                        is_active=True
+                    )
+                    video_service.update_isl_video(existing_video.id, update_data)
+                    video_id = existing_video.id
+                else:
+                    # Create new record
+                    video_data = ISLVideoCreate(
+                        filename=filename,
+                        display_name=folder_name,
+                        video_path=video_path,
+                        file_size=file_size,
+                        model_type=model_type,
+                        mime_type="video/mp4",
+                        file_extension="mp4",
+                        is_active=True
+                    )
+                    new_video = video_service.create_isl_video(video_data)
+                    video_id = new_video.id
+                
+                # Process video with ffmpeg (async)
+                await process_video_async(video_id, video_path, folder_info["folder_path"], db)
+                processed_count += 1
+                
+            except Exception as e:
+                error_msg = f"Error processing {folder_info['folder_name']}: {str(e)}"
+                errors.append(error_msg)
+                print(f"❌ {error_msg}")
+        
+        return {
+            "success": True,
+            "message": f"Sync completed. Processed {processed_count} videos.",
+            "processed": processed_count,
+            "errors": errors,
+            "total_folders": len(folders_to_process)
+        }
+        
+    except Exception as e:
+        print(f"❌ Sync error: {e}")
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")

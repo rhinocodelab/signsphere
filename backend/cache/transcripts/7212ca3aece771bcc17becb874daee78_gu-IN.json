@@ -1,0 +1,51 @@
+{
+  "transcript": "\u0a9f\u0acd\u0ab0\u0ac7\u0aa8 \u0aa8\u0a82\u0aac\u0ab0 112 \u0aae\u0acb\u0aa1\u0ac0 \u0a9a\u0abe\u0ab2\u0ac0 \u0ab0\u0ab9\u0ac0 \u0a9b\u0ac7",
+  "confidence": 0.8068273663520813,
+  "duration": 4.275,
+  "word_count": 7,
+  "word_time_offsets": [
+    {
+      "word": "\u0a9f\u0acd\u0ab0\u0ac7\u0aa8",
+      "start_time": 0.0,
+      "end_time": 0.7
+    },
+    {
+      "word": "\u0aa8\u0a82\u0aac\u0ab0",
+      "start_time": 0.7,
+      "end_time": 1.1
+    },
+    {
+      "word": "112",
+      "start_time": 1.1,
+      "end_time": 2.0
+    },
+    {
+      "word": "\u0aae\u0acb\u0aa1\u0ac0",
+      "start_time": 2.0,
+      "end_time": 2.3
+    },
+    {
+      "word": "\u0a9a\u0abe\u0ab2\u0ac0",
+      "start_time": 2.3,
+      "end_time": 2.6
+    },
+    {
+      "word": "\u0ab0\u0ab9\u0ac0",
+      "start_time": 2.6,
+      "end_time": 2.8
+    },
+    {
+      "word": "\u0a9b\u0ac7",
+      "start_time": 2.8,
+      "end_time": 3.1
+    }
+  ],
+  "audio_info": {
+    "sample_rate": 48000,
+    "duration": 4.275,
+    "file_extension": "wav",
+    "encoding": 1,
+    "channels": 1,
+    "file_size": 410444
+  }
+}
