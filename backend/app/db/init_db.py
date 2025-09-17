@@ -7,6 +7,7 @@ from app.models.train_route_translation import TrainRouteTranslation
 # Import to ensure table creation
 from app.models.announcement_template import AnnouncementTemplate
 from app.models.isl_video import ISLVideo
+from app.models.general_announcement import GeneralAnnouncement  # Import to ensure table creation
 from app.db.base_class import Base
 from app.db.session import engine
 

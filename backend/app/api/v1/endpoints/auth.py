@@ -64,3 +64,19 @@ def test_token(current_user: User = Depends(get_current_user)) -> Any:
     Test access token.
     """
     return current_user
+
+
+@router.post("/refresh", response_model=Token)
+def refresh_access_token(current_user: User = Depends(get_current_user)) -> Any:
+    """
+    Refresh access token.
+    """
+    access_token_expires = timedelta(
+        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = security.create_access_token(
+        subject=current_user.username, expires_delta=access_token_expires
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+    }
