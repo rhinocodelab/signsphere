@@ -4,7 +4,9 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
+import { getApiUrl } from '@/utils/api-utils'
 
+import DashboardLayout from '@/components/layouts/DashboardLayout'
 export default function TextToISLPage() {
     const router = useRouter()
     const [user, setUser] = useState<any>(null)
@@ -21,7 +23,24 @@ export default function TextToISLPage() {
     // Processing states
     const [translating, setTranslating] = useState(false)
     const [generatingVideo, setGeneratingVideo] = useState(false)
-    const [progress, setProgress] = useState({ current: 0, total: 0, message: '' })
+    const [showProgressModal, setShowProgressModal] = useState(false)
+    const [progress, setProgress] = useState({
+        step: '',
+        progress: 0,
+        isComplete: false,
+        error: null as string | null,
+        completedSteps: {
+            textTranslation: false,
+            videoGeneration: false
+        }
+    })
+    const [showVideoProgressModal, setShowVideoProgressModal] = useState(false)
+    const [videoProgress, setVideoProgress] = useState({
+        step: '',
+        progress: 0,
+        isComplete: false,
+        error: null as string | null
+    })
     
     // AI Model selection
     const [selectedModel, setSelectedModel] = useState('male')
@@ -48,15 +67,26 @@ export default function TextToISLPage() {
         }
 
         setTranslating(true)
-        setProgress({ current: 0, total: 4, message: 'Starting translation...' })
+        setShowProgressModal(true)
+        setProgress({
+            step: 'Starting translation...',
+            progress: 0,
+            isComplete: false,
+            error: null,
+            completedSteps: {
+                textTranslation: false,
+                videoGeneration: false
+            }
+        })
 
         try {
-            const currentHost = window.location.hostname
-            const apiUrl = currentHost === 'localhost'
-                ? 'https://localhost:5001'
-                : (process.env.NEXT_PUBLIC_API_URL || `https://${currentHost}:5001`)
+            const apiUrl = getApiUrl()
 
-            setProgress({ current: 1, total: 4, message: 'Translating to Hindi...' })
+            setProgress(prev => ({
+                ...prev,
+                step: 'Translating to Hindi...',
+                progress: 25
+            }))
 
             // Translate to Hindi
             const hindiFormData = new URLSearchParams()
@@ -79,7 +109,11 @@ export default function TextToISLPage() {
             const hindiResponseData = await hindiResponse.json()
             const hindiResult = hindiResponseData.translation_result
 
-            setProgress({ current: 2, total: 4, message: 'Translating to Marathi...' })
+            setProgress(prev => ({
+                ...prev,
+                step: 'Translating to Marathi...',
+                progress: 50
+            }))
 
             // Translate to Marathi
             const marathiFormData = new URLSearchParams()
@@ -102,7 +136,11 @@ export default function TextToISLPage() {
             const marathiResponseData = await marathiResponse.json()
             const marathiResult = marathiResponseData.translation_result
 
-            setProgress({ current: 3, total: 4, message: 'Translating to Gujarati...' })
+            setProgress(prev => ({
+                ...prev,
+                step: 'Translating to Gujarati...',
+                progress: 75
+            }))
 
             // Translate to Gujarati
             const gujaratiFormData = new URLSearchParams()
@@ -137,15 +175,34 @@ export default function TextToISLPage() {
 
             setTranslationResult(combinedResult)
             
-            setProgress({ current: 4, total: 4, message: 'Translation complete!' })
+            setProgress(prev => ({
+                ...prev,
+                step: 'Translation complete!',
+                progress: 100,
+                isComplete: true,
+                completedSteps: {
+                    ...prev.completedSteps,
+                    textTranslation: true
+                }
+            }))
+            
+            // Wait a moment to show completion
+            await new Promise(resolve => setTimeout(resolve, 1500))
+            
+            // Close modal
+            setShowProgressModal(false)
             toast.success('Text translated to all languages successfully!')
 
         } catch (error) {
             console.error('Translation error:', error)
+            setProgress(prev => ({
+                ...prev,
+                step: 'Translation failed',
+                error: 'Translation failed. Please try again.'
+            }))
             toast.error('Translation failed. Please try again.')
         } finally {
             setTranslating(false)
-            setProgress({ current: 0, total: 0, message: '' })
         }
     }
 
@@ -156,15 +213,22 @@ export default function TextToISLPage() {
         }
 
         setGeneratingVideo(true)
-        setProgress({ current: 0, total: 5, message: 'Starting video generation...' })
+        setShowVideoProgressModal(true)
+        setVideoProgress({
+            step: 'Starting video generation...',
+            progress: 0,
+            isComplete: false,
+            error: null
+        })
 
         try {
-            const currentHost = window.location.hostname
-            const apiUrl = currentHost === 'localhost'
-                ? 'https://localhost:5001'
-                : (process.env.NEXT_PUBLIC_API_URL || `https://${currentHost}:5001`)
+            const apiUrl = getApiUrl()
 
-            setProgress({ current: 1, total: 5, message: 'Preparing video generation...' })
+            setVideoProgress(prev => ({
+                ...prev,
+                step: 'Preparing video generation...',
+                progress: 20
+            }))
 
             const response = await fetch(`${apiUrl}/api/v1/isl-video-generation/generate`, {
                 method: 'POST',
@@ -182,21 +246,40 @@ export default function TextToISLPage() {
                 throw new Error(`Video generation failed: ${response.statusText}`)
             }
 
-            setProgress({ current: 2, total: 5, message: 'Generating ISL video...' })
+            setVideoProgress(prev => ({
+                ...prev,
+                step: 'Generating ISL video...',
+                progress: 60
+            }))
 
             const result = await response.json()
             setVideoGenerationResult(result)
             setVideoPreviewUrl(`${apiUrl}${result.preview_url}`)
             
-            setProgress({ current: 5, total: 5, message: 'Video generation complete!' })
+            setVideoProgress(prev => ({
+                ...prev,
+                step: 'Video generation complete!',
+                progress: 100,
+                isComplete: true
+            }))
+            
+            // Wait a moment to show completion
+            await new Promise(resolve => setTimeout(resolve, 1500))
+            
+            // Close modal
+            setShowVideoProgressModal(false)
             toast.success('ISL video generated successfully!')
 
         } catch (error) {
             console.error('Video generation error:', error)
+            setVideoProgress(prev => ({
+                ...prev,
+                step: 'Video generation failed',
+                error: 'Video generation failed. Please try again.'
+            }))
             toast.error('Video generation failed. Please try again.')
         } finally {
             setGeneratingVideo(false)
-            setProgress({ current: 0, total: 0, message: '' })
         }
     }
 
@@ -207,10 +290,7 @@ export default function TextToISLPage() {
         }
 
         try {
-            const currentHost = window.location.hostname
-            const apiUrl = currentHost === 'localhost'
-                ? 'https://localhost:5001'
-                : (process.env.NEXT_PUBLIC_API_URL || `https://${currentHost}:5001`)
+            const apiUrl = getApiUrl()
 
             const response = await fetch(`${apiUrl}/api/v1/isl-video-generation/save/${videoGenerationResult.temp_video_id}`, {
                 method: 'POST',
@@ -267,10 +347,7 @@ export default function TextToISLPage() {
 
     const handleCleanupTempVideo = async (tempVideoId: string) => {
         try {
-            const currentHost = window.location.hostname
-            const apiUrl = currentHost === 'localhost'
-                ? 'https://localhost:5001'
-                : (process.env.NEXT_PUBLIC_API_URL || `https://${currentHost}:5001`)
+            const apiUrl = getApiUrl()
 
             const response = await fetch(`${apiUrl}/api/v1/isl-video-generation/cleanup/${tempVideoId}`, {
                 method: 'DELETE'
@@ -286,152 +363,95 @@ export default function TextToISLPage() {
         }
     }
 
+    const handleRetryTranslation = async () => {
+        if (!inputText.trim()) {
+            toast.error('Please enter some text to translate')
+            return
+        }
+
+        // Reset progress and start over
+        setProgress({
+            step: 'Retrying translation...',
+            progress: 0,
+            isComplete: false,
+            error: null,
+            completedSteps: {
+                textTranslation: false,
+                videoGeneration: false
+            }
+        })
+
+        // Clear previous results
+        setTranslationResult(null)
+
+        // Start the translation process again
+        await handleTranslate()
+    }
+
+    const handleCancelTranslation = () => {
+        // Clear translation state
+        setTranslationResult(null)
+        setShowProgressModal(false)
+        setProgress({
+            step: '',
+            progress: 0,
+            isComplete: false,
+            error: null,
+            completedSteps: {
+                textTranslation: false,
+                videoGeneration: false
+            }
+        })
+
+        toast('Translation cancelled')
+    }
+
+    const handleRetryVideoGeneration = async () => {
+        if (!inputText.trim()) {
+            toast.error('Please enter some text first')
+            return
+        }
+
+        // Reset video progress and start over
+        setVideoProgress({
+            step: 'Retrying video generation...',
+            progress: 0,
+            isComplete: false,
+            error: null
+        })
+
+        // Clear previous video results
+        setVideoGenerationResult(null)
+        setVideoPreviewUrl('')
+        setVideoSaved(false)
+
+        // Start the video generation process again
+        await handleGenerateISLVideo()
+    }
+
+    const handleCancelVideoGeneration = () => {
+        // Clear video generation state
+        setVideoGenerationResult(null)
+        setVideoPreviewUrl('')
+        setVideoSaved(false)
+        setShowVideoProgressModal(false)
+        setVideoProgress({
+            step: '',
+            progress: 0,
+            isComplete: false,
+            error: null
+        })
+
+        toast('Video generation cancelled')
+    }
+
     if (!user) {
         return <div className="min-h-screen flex items-center justify-center">Loading...</div>
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Header */}
-            <header className="bg-white shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-40">
-                <div className="px-6 py-4">
-                    <div className="flex items-center justify-between">
-                        {/* Left Section - Logo and Title */}
-                        <div className="flex items-center space-x-4">
-                            <Link href="/dashboard" className="flex items-center space-x-3">
-                                <div className="w-8 h-8 bg-teal-600 rounded-full flex items-center justify-center">
-                                    <div className="w-4 h-4 bg-white rounded-full"></div>
-                                </div>
-                                <div className="flex flex-col">
-                                    <span className="text-xl font-semibold text-gray-900">SignSphere</span>
-                                    <span className="text-sm text-gray-500">Western Railway Divyangjan Announcement System</span>
-                                </div>
-                            </Link>
-                        </div>
-
-                        {/* Right Section - Profile */}
-                        <div className="flex items-center space-x-4">
-                            {/* Profile */}
-                            <div className="relative profile-dropdown">
-                                <button
-                                    onClick={() => setShowProfileDropdown(!showProfileDropdown)}
-                                    className="flex items-center space-x-2 p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                                >
-                                    <div className="w-8 h-8 bg-teal-600 rounded-full flex items-center justify-center">
-                                        <span className="text-white text-sm font-medium">
-                                            {user?.username?.charAt(0) || 'U'}
-                                        </span>
-                                    </div>
-                                    <span className="text-sm font-medium text-gray-700">{user?.username}</span>
-                                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                </button>
-
-                                {/* Profile Dropdown */}
-                                {showProfileDropdown && (
-                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-                                        <div className="px-4 py-2 border-b border-gray-100">
-                                            <p className="text-sm font-medium text-gray-900">{user?.username}</p>
-                                            <p className="text-xs text-gray-500">Administrator</p>
-                                        </div>
-                                        <button
-                                            onClick={() => {
-                                                localStorage.removeItem('user')
-                                                router.push('/login')
-                                            }}
-                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                                        >
-                                            Sign out
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            <div className="flex pt-16">
-                {/* Fixed Sidebar */}
-                <aside className="fixed left-0 top-16 bottom-0 bg-white border-r border-gray-200 w-fit min-w-64 max-w-80 z-30 overflow-y-auto">
-                    <nav className="p-4 pt-8 space-y-2 w-full">
-                        {/* Dashboard */}
-                        <Link href="/dashboard" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                            </svg>
-                            <span>Dashboard</span>
-                        </Link>
-
-                        {/* Route Management */}
-                        <Link href="/route-management" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                            </svg>
-                            <span>Route Management</span>
-                        </Link>
-
-                        {/* AI Content Generation Section */}
-                        <div className="pt-6">
-                            <h3 className="px-3 text-sm font-bold text-gray-800 uppercase tracking-wider mb-3">
-                                AI Content Generation
-                            </h3>
-                            <Link href="/ai-generated-assets/translations" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-                                </svg>
-                                <span>Train Route Translations</span>
-                            </Link>
-                            <Link href="/announcement-template" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
-                                </svg>
-                                <span>Announcement Template</span>
-                            </Link>
-                            <Link href="/general-announcements" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-                                </svg>
-                                <span>General Announcements</span>
-                            </Link>
-                            <Link href="/ai-generated-assets/audio-to-isl" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                                </svg>
-                                <span>Audio File to ISL</span>
-                            </Link>
-                            <Link href="/ai-generated-assets/speech-to-isl" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                                </svg>
-                                <span>Speech to ISL</span>
-                            </Link>
-                            <Link href="/ai-generated-assets/text-to-isl" className="flex items-center space-x-3 px-3 py-2 bg-teal-50 text-teal-700 rounded-lg">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                                <span>Text to ISL</span>
-                            </Link>
-                        </div>
-
-                        {/* Indian Sign Language (ISL) Section */}
-                        <div className="pt-6">
-                            <h3 className="px-3 text-sm font-bold text-gray-800 uppercase tracking-wider mb-3">
-                                Indian Sign Language (ISL)
-                            </h3>
-                            <Link href="/ai-generated-assets/isl-dataset" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                                </svg>
-                                <span>ISL Dictionary</span>
-                            </Link>
-                        </div>
-                    </nav>
-                </aside>
-
-                {/* Main Content */}
-                <main className="flex-1 ml-64 p-6 min-h-screen pb-24">
+        <DashboardLayout activeMenuItem="text-to-isl">
+            
                     <div className="max-w-6xl mx-auto">
                         {/* Page Header */}
                         <div className="mb-8 pt-4">
@@ -592,21 +612,6 @@ export default function TextToISLPage() {
                                                     {generatingVideo ? 'Generating ISL Video...' : 'Generate ISL Video'}
                                                 </button>
 
-                                                {/* Progress Bar */}
-                                                {progress.total > 0 && (
-                                                    <div className="space-y-2">
-                                                        <div className="flex justify-between text-sm text-gray-600">
-                                                            <span>{progress.message}</span>
-                                                            <span>{progress.current}/{progress.total}</span>
-                                                        </div>
-                                                        <div className="w-full bg-gray-200 rounded-full h-2">
-                                                            <div
-                                                                className="bg-teal-600 h-2 rounded-full transition-all duration-300"
-                                                                style={{ width: `${(progress.current / progress.total) * 100}%` }}
-                                                            ></div>
-                                                        </div>
-                                                    </div>
-                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -718,8 +723,228 @@ export default function TextToISLPage() {
                             </div>
                         </div>
                     </div>
-                </main>
-            </div>
-        </div>
+
+            {/* Translation Progress Modal */}
+            {showProgressModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                        <div className="text-center">
+                            <div className="mb-4">
+                                <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    {progress.isComplete ? (
+                                        <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    ) : progress.error ? (
+                                        <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="w-8 h-8 text-teal-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                    )}
+                                </div>
+                                
+                                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                                    {progress.isComplete ? 'Translation Complete!' : progress.error ? 'Translation Failed' : 'Translating Text'}
+                                </h3>
+                                
+                                <p className="text-sm text-gray-600 mb-4">
+                                    {progress.error || progress.step}
+                                </p>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="mb-6">
+                                <div className="flex justify-between text-xs text-gray-500 mb-2">
+                                    <span>Progress</span>
+                                    <span>{progress.progress}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div 
+                                        className={`h-2 rounded-full transition-all duration-300 ${
+                                            progress.error ? 'bg-red-500' : 'bg-teal-600'
+                                        }`}
+                                        style={{ width: `${progress.progress}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+
+                            {/* Translation Steps */}
+                            <div className="space-y-2 mb-6">
+                                <div className="flex items-center space-x-3">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                                        progress.completedSteps.textTranslation ? 'bg-green-500' : 
+                                        progress.error && !progress.completedSteps.textTranslation ? 'bg-red-500' : 
+                                        'bg-gray-200'
+                                    }`}>
+                                        {progress.completedSteps.textTranslation && (
+                                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        )}
+                                        {progress.error && !progress.completedSteps.textTranslation && (
+                                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        )}
+                                    </div>
+                                    <span className={`text-sm ${
+                                        progress.completedSteps.textTranslation ? 'text-green-600 font-medium' : 
+                                        progress.error && !progress.completedSteps.textTranslation ? 'text-red-600 font-medium' : 
+                                        'text-gray-500'
+                                    }`}>
+                                        Multi-Language Translation
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            {progress.error && (
+                                <div className="flex space-x-3">
+                                    <button
+                                        onClick={handleRetryTranslation}
+                                        className="flex-1 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium transition-colors"
+                                    >
+                                        Retry
+                                    </button>
+                                    <button
+                                        onClick={handleCancelTranslation}
+                                        className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Video Generation Progress Modal */}
+            {showVideoProgressModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                        <div className="text-center">
+                            <div className="mb-4">
+                                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    {videoProgress.isComplete ? (
+                                        <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    ) : videoProgress.error ? (
+                                        <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="w-8 h-8 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                    )}
+                                </div>
+                                
+                                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                                    {videoProgress.isComplete ? 'Video Generation Complete!' : videoProgress.error ? 'Video Generation Failed' : 'Generating ISL Video'}
+                                </h3>
+                                
+                                <p className="text-sm text-gray-600 mb-4">
+                                    {videoProgress.error || videoProgress.step}
+                                </p>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="mb-6">
+                                <div className="flex justify-between text-xs text-gray-500 mb-2">
+                                    <span>Progress</span>
+                                    <span>{videoProgress.progress}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div 
+                                        className={`h-2 rounded-full transition-all duration-300 ${
+                                            videoProgress.error ? 'bg-red-500' : 'bg-blue-600'
+                                        }`}
+                                        style={{ width: `${videoProgress.progress}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+
+                            {/* Video Generation Steps */}
+                            <div className="space-y-2 mb-6">
+                                <div className="flex items-center space-x-3">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                                        videoProgress.progress >= 20 ? 'bg-green-500' : 
+                                        videoProgress.error ? 'bg-red-500' : 
+                                        'bg-gray-200'
+                                    }`}>
+                                        {videoProgress.progress >= 20 && (
+                                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        )}
+                                        {videoProgress.error && videoProgress.progress < 20 && (
+                                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        )}
+                                    </div>
+                                    <span className={`text-sm ${
+                                        videoProgress.progress >= 20 ? 'text-green-600 font-medium' : 
+                                        videoProgress.error ? 'text-red-600 font-medium' : 
+                                        'text-gray-500'
+                                    }`}>
+                                        Processing Text
+                                    </span>
+                                </div>
+                                
+                                <div className="flex items-center space-x-3">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                                        videoProgress.progress >= 60 ? 'bg-green-500' : 
+                                        videoProgress.error && videoProgress.progress >= 20 && videoProgress.progress < 60 ? 'bg-red-500' : 
+                                        'bg-gray-200'
+                                    }`}>
+                                        {videoProgress.progress >= 60 && (
+                                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        )}
+                                        {videoProgress.error && videoProgress.progress >= 20 && videoProgress.progress < 60 && (
+                                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        )}
+                                    </div>
+                                    <span className={`text-sm ${
+                                        videoProgress.progress >= 60 ? 'text-green-600 font-medium' : 
+                                        videoProgress.error && videoProgress.progress >= 20 && videoProgress.progress < 60 ? 'text-red-600 font-medium' : 
+                                        'text-gray-500'
+                                    }`}>
+                                        Generating ISL Video
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            {videoProgress.error && (
+                                <div className="flex space-x-3">
+                                    <button
+                                        onClick={handleRetryVideoGeneration}
+                                        className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                                    >
+                                        Retry
+                                    </button>
+                                    <button
+                                        onClick={handleCancelVideoGeneration}
+                                        className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </DashboardLayout>
     )
 }

@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { appConfig } from '@/config/app-config'
 import toast from 'react-hot-toast'
+import DashboardLayout from '@/components/layouts/DashboardLayout'
+import { getApiUrl } from '@/utils/api-utils'
 
 interface ISLVideo {
     id: number
@@ -35,7 +37,6 @@ interface VideoResponse {
 
 export default function ISLDatasetPage() {
     const [user, setUser] = useState<any>(null)
-    const [showProfileDropdown, setShowProfileDropdown] = useState(false)
     const [modelType, setModelType] = useState<'male' | 'female'>('male')
     const [videos, setVideos] = useState<ISLVideo[]>([])
     const [loading, setLoading] = useState(false)
@@ -48,50 +49,87 @@ export default function ISLDatasetPage() {
     // Upload modal states
     const [showUploadModal, setShowUploadModal] = useState(false)
     const [uploading, setUploading] = useState(false)
-    const [dragActive, setDragActive] = useState(false)
     const [selectedFile, setSelectedFile] = useState<File | null>(null)
-    const [uploadModelType, setUploadModelType] = useState<'male' | 'female'>('male')
-    const [displayName, setDisplayName] = useState('')
-    const [description, setDescription] = useState('')
-    const [tags, setTags] = useState('')
-    const [showUploadProgressModal, setShowUploadProgressModal] = useState(false)
-    const [uploadProgress, setUploadProgress] = useState({
-        step: '',
+    const [newVideo, setNewVideo] = useState({
+        display_name: '',
+        description: '',
+        tags: '',
+        model_type: 'male'
+    })
+
+    // Edit modal states
+    const [showEditModal, setShowEditModal] = useState(false)
+    const [editingVideo, setEditingVideo] = useState<ISLVideo | null>(null)
+    const [updating, setUpdating] = useState(false)
+
+    // Delete modal states
+    const [showDeleteModal, setShowDeleteModal] = useState(false)
+    const [deletingVideo, setDeletingVideo] = useState<ISLVideo | null>(null)
+    const [showVideoModal, setShowVideoModal] = useState(false)
+    const [playingVideo, setPlayingVideo] = useState<ISLVideo | null>(null)
+    const [videoBlobUrl, setVideoBlobUrl] = useState<string | null>(null)
+    const [showSyncProgressModal, setShowSyncProgressModal] = useState(false)
+    const [syncProgress, setSyncProgress] = useState({
+        currentStep: '',
         progress: 0,
         isComplete: false,
         error: null as string | null,
-        duplicateWarnings: null as any[] | null
+        completedSteps: {
+            maleModelScan: false,
+            maleModelProcess: false,
+            femaleModelScan: false,
+            femaleModelProcess: false
+        },
+        results: {
+            maleProcessed: 0,
+            maleErrors: 0,
+            femaleProcessed: 0,
+            femaleErrors: 0
+        }
     })
-    const [showDeleteModal, setShowDeleteModal] = useState(false)
-    const [deletingVideo, setDeletingVideo] = useState(false)
-    const [videoToDelete, setVideoToDelete] = useState<{ id: number, filename: string } | null>(null)
-    const [showVideoPlayer, setShowVideoPlayer] = useState(false)
-    const [currentVideo, setCurrentVideo] = useState<ISLVideo | null>(null)
+    const [deleting, setDeleting] = useState(false)
 
-    // Sync functionality states
+    // Sync modal states
     const [showSyncModal, setShowSyncModal] = useState(false)
     const [syncing, setSyncing] = useState(false)
     const [forceReprocess, setForceReprocess] = useState(false)
-    const [syncProgress, setSyncProgress] = useState({
-        step: '',
-        progress: 0,
-        isComplete: false,
-        error: null as string | null,
-        processed: 0,
-        total: 0,
-        errors: [] as string[]
-    })
-
-    const fileInputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
         const checkAuthentication = async () => {
             const isLoggedIn = localStorage.getItem('isLoggedIn')
             const userData = localStorage.getItem('user')
+            const accessToken = localStorage.getItem('accessToken')
 
-            if (isLoggedIn === 'true' && userData) {
-                setUser(JSON.parse(userData))
-            } else {
+            if (!isLoggedIn || !userData || !accessToken) {
+                window.location.href = '/login'
+                return
+            }
+
+            try {
+                const apiUrl = getApiUrl()
+
+                const response = await fetch(`${apiUrl}/api/v1/auth/me`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                })
+
+                if (response.ok) {
+                    const userInfo = await response.json()
+                    setUser(userInfo)
+                } else {
+                    localStorage.removeItem('isLoggedIn')
+                    localStorage.removeItem('user')
+                    localStorage.removeItem('accessToken')
+                    window.location.href = '/login'
+                }
+            } catch (error) {
+                console.error('Authentication check failed:', error)
+                localStorage.removeItem('isLoggedIn')
+                localStorage.removeItem('user')
+                localStorage.removeItem('accessToken')
                 window.location.href = '/login'
             }
         }
@@ -100,269 +138,66 @@ export default function ISLDatasetPage() {
     }, [])
 
     useEffect(() => {
-        fetchVideos()
-        fetchVideoCounts()
-    }, [modelType, currentPage, searchQuery])
-
-    const fetchVideoCounts = async () => {
-        try {
-            const currentHost = window.location.hostname
-            const apiUrl = currentHost === 'localhost'
-                ? 'https://localhost:5001'
-                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
-
-            // Fetch male model count
-            const maleResponse = await fetch(`${apiUrl}/api/v1/isl-videos/?model_type=male&limit=1`, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            })
-
-            // Fetch female model count
-            const femaleResponse = await fetch(`${apiUrl}/api/v1/isl-videos/?model_type=female&limit=1`, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            })
-
-            if (maleResponse.ok) {
-                const maleData = await maleResponse.json()
-                setMaleVideoCount(maleData.total)
-            }
-
-            if (femaleResponse.ok) {
-                const femaleData = await femaleResponse.json()
-                setFemaleVideoCount(femaleData.total)
-            }
-        } catch (error) {
-            console.error('Error fetching video counts:', error)
+        if (user) {
+            loadVideos()
+            loadVideoCounts()
         }
-    }
+    }, [user, modelType, currentPage])
 
-    const fetchVideos = async () => {
+    // Cleanup blob URLs when component unmounts
+    useEffect(() => {
+        return () => {
+            if (videoBlobUrl) {
+                URL.revokeObjectURL(videoBlobUrl)
+            }
+        }
+    }, [videoBlobUrl])
+
+    const loadVideos = async () => {
         setLoading(true)
         try {
-            const currentHost = window.location.hostname
-            const apiUrl = currentHost === 'localhost'
-                ? 'https://localhost:5001'
-                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
+            const apiUrl = getApiUrl()
 
-            const params = new URLSearchParams({
-                model_type: modelType,
-                page: currentPage.toString(),
-                limit: '60'
-            })
-
-            if (searchQuery.trim()) {
-                params.append('search', searchQuery.trim())
-            }
-
-            const response = await fetch(`${apiUrl}/api/v1/isl-videos/?${params}`, {
+            const response = await fetch(`${apiUrl}/api/v1/isl-videos?model_type=${modelType}&page=${currentPage}&limit=60`, {
                 method: 'GET',
                 headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
                     'Content-Type': 'application/json',
-                }
+                },
             })
 
             if (response.ok) {
                 const data: VideoResponse = await response.json()
                 setVideos(data.videos)
                 setTotalPages(data.total_pages)
+            } else {
+                toast.error('Failed to load videos')
             }
         } catch (error) {
-            console.error('Error fetching videos:', error)
+            console.error('Error loading videos:', error)
+            toast.error('Error loading videos')
         } finally {
             setLoading(false)
         }
     }
 
-    const handleDrag = (e: React.DragEvent) => {
-        e.preventDefault()
-        e.stopPropagation()
-        if (e.type === 'dragenter' || e.type === 'dragover') {
-            setDragActive(true)
-        } else if (e.type === 'dragleave') {
-            setDragActive(false)
-        }
-    }
-
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault()
-        e.stopPropagation()
-        setDragActive(false)
-
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            const file = e.dataTransfer.files[0]
-            if (file.type === 'video/mp4') {
-                setSelectedFile(file)
-                // Set display name with first character capitalized
-                const filename = file.name.replace('.mp4', '')
-                setDisplayName(filename.charAt(0).toUpperCase() + filename.slice(1))
-            } else {
-                toast.error('Please upload only MP4 files')
-            }
-        }
-    }
-
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0]
-            if (file.type === 'video/mp4') {
-                setSelectedFile(file)
-                // Set display name with first character capitalized
-                const filename = file.name.replace('.mp4', '')
-                setDisplayName(filename.charAt(0).toUpperCase() + filename.slice(1))
-            } else {
-                toast.error('Please upload only MP4 files')
-            }
-        }
-    }
-
-    const handleUpload = async () => {
-        if (!selectedFile) {
-            toast.error('Please select a file to upload')
-            return
-        }
-
-        setUploading(true)
-        setShowUploadProgressModal(true)
-        setUploadProgress({
-            step: 'Preparing upload...',
-            progress: 0,
-            isComplete: false,
-            error: null,
-            duplicateWarnings: null
-        })
-
+    const loadVideoCounts = async () => {
         try {
-            // Simulate upload progress steps
-            const progressSteps = [
-                { step: 'Preparing upload...', progress: 10 },
-                { step: 'Uploading video file...', progress: 30 },
-                { step: 'Saving to database...', progress: 50 },
-                { step: 'Starting video processing...', progress: 60 },
-                { step: 'Processing with FFmpeg...', progress: 80 },
-                { step: 'Extracting metadata...', progress: 90 }
-            ]
+            const apiUrl = getApiUrl()
 
-            // Simulate progress
-            for (const step of progressSteps) {
-                setUploadProgress(prev => ({
-                    ...prev,
-                    step: step.step,
-                    progress: step.progress
-                }))
-                await new Promise(resolve => setTimeout(resolve, 800))
-            }
-
-            const currentHost = window.location.hostname
-            const apiUrl = currentHost === 'localhost'
-                ? 'https://localhost:5001'
-                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
-
-            const formData = new FormData()
-            formData.append('file', selectedFile)
-            formData.append('model_type', uploadModelType)
-            formData.append('display_name', displayName)
-
-            setUploadProgress(prev => ({
-                ...prev,
-                step: 'Finalizing upload...',
-                progress: 95
-            }))
-
-            const response = await fetch(`${apiUrl}/api/v1/isl-videos/upload`, {
-                method: 'POST',
-                body: formData
+            const response = await fetch(`${apiUrl}/api/v1/isl-videos/statistics/summary`, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` }
             })
 
             if (response.ok) {
-                const result = await response.json()
-                
-                // Check for duplicate warnings or file replacement
-                if (result.duplicate_warnings && result.duplicate_warnings.length > 0) {
-                    // Show completion with duplicate warnings
-                    setUploadProgress(prev => ({
-                        ...prev,
-                        step: 'Video uploaded successfully! (Duplicates detected)',
-                        progress: 100,
-                        isComplete: true,
-                        duplicateWarnings: result.duplicate_warnings
-                    }))
-                } else if (result.file_replaced) {
-                    // Show completion with file replacement info
-                    setUploadProgress(prev => ({
-                        ...prev,
-                        step: 'Video uploaded successfully! (File replaced)',
-                        progress: 100,
-                        isComplete: true,
-                        duplicateWarnings: null
-                    }))
-                } else {
-                    // Normal completion
-                    setUploadProgress(prev => ({
-                        ...prev,
-                        step: 'Video uploaded and processing started!',
-                        progress: 100,
-                        isComplete: true
-                    }))
-                }
-
-                // Wait a moment to show completion
-                await new Promise(resolve => setTimeout(resolve, 1500))
-
-                // Close modals and reset
-                setShowUploadProgressModal(false)
-                setShowUploadModal(false)
-                setSelectedFile(null)
-                setDisplayName('')
-                setUploadProgress({
-                    step: '',
-                    progress: 0,
-                    isComplete: false,
-                    error: null,
-                    duplicateWarnings: null
-                })
-
-                fetchVideos() // Refresh the video list
-                fetchVideoCounts() // Refresh the video counts
+                const data = await response.json()
+                setMaleVideoCount(data.male_videos || 0)
+                setFemaleVideoCount(data.female_videos || 0)
             } else {
-                const error = await response.json()
-                
-                // Handle duplicate upload errors specifically
-                if (response.status === 409 && error.detail && typeof error.detail === 'object') {
-                    const duplicateInfo = error.detail
-                    let errorMessage = duplicateInfo.message || 'Duplicate video detected'
-                    
-                    if (duplicateInfo.duplicate_video) {
-                        const dup = duplicateInfo.duplicate_video
-                        errorMessage = `Duplicate detected: "${dup.display_name}" (${dup.filename}) already exists. File size: ${formatFileSize(dup.file_size)}`
-                    }
-                    
-                    setUploadProgress(prev => ({
-                        ...prev,
-                        step: 'Duplicate video detected',
-                        error: errorMessage
-                    }))
-                } else {
-                    setUploadProgress(prev => ({
-                        ...prev,
-                        step: 'Upload failed',
-                        error: error.detail || 'Upload failed'
-                    }))
-                }
+                console.error('Failed to load video statistics:', response.status, response.statusText)
             }
         } catch (error) {
-            console.error('Upload error:', error)
-            setUploadProgress(prev => ({
-                ...prev,
-                step: 'Upload failed',
-                error: 'Network error occurred'
-            }))
-        } finally {
-            setUploading(false)
+            console.error('Error loading video counts:', error)
         }
     }
 
@@ -374,813 +209,786 @@ export default function ISLDatasetPage() {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
     }
 
-    const formatDuration = (seconds: number) => {
-        const mins = Math.floor(seconds / 60)
-        const secs = Math.floor(seconds % 60)
-        return `${mins}:${secs.toString().padStart(2, '0')}`
-    }
-
-    const handleLogout = () => {
-        localStorage.removeItem('isLoggedIn')
-        localStorage.removeItem('user')
-        localStorage.removeItem('accessToken')
-        window.location.href = '/login'
-    }
-
-    const handlePlayVideo = (video: ISLVideo) => {
-        setCurrentVideo(video)
-        setShowVideoPlayer(true)
-    }
-
-    const closeVideoPlayer = () => {
-        setShowVideoPlayer(false)
-        setCurrentVideo(null)
-    }
-
-    const handleDeleteVideo = (videoId: number, filename: string) => {
-        setVideoToDelete({ id: videoId, filename })
-        setShowDeleteModal(true)
-    }
-
-    const confirmDeleteVideo = async () => {
-        if (!videoToDelete) return
-
-        setDeletingVideo(true)
-        try {
-            const currentHost = window.location.hostname
-            const apiUrl = currentHost === 'localhost'
-                ? 'https://localhost:5001'
-                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
-
-            const response = await fetch(`${apiUrl}/api/v1/isl-videos/${videoToDelete.id}`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            })
-
-            if (response.ok) {
-                toast.success('Video deleted successfully!')
-                setShowDeleteModal(false)
-                setVideoToDelete(null)
-                fetchVideos() // Refresh the video list
-                fetchVideoCounts() // Refresh the video counts
-            } else {
-                const error = await response.json()
-                toast.error(error.detail || 'Failed to delete video')
-            }
-        } catch (error) {
-            console.error('Delete error:', error)
-            toast.error('Failed to delete video')
-        } finally {
-            setDeletingVideo(false)
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            setSelectedFile(e.target.files[0])
         }
     }
 
-    const cancelDeleteVideo = () => {
-        setShowDeleteModal(false)
-        setVideoToDelete(null)
+    const handleUpload = async () => {
+        if (!selectedFile || !newVideo.display_name) {
+            toast.error('Please fill in all required fields')
+            return
+        }
+
+        setUploading(true)
+        try {
+            const apiUrl = getApiUrl()
+
+            const formData = new FormData()
+            formData.append('file', selectedFile)
+            formData.append('display_name', newVideo.display_name)
+            formData.append('description', newVideo.description)
+            formData.append('tags', newVideo.tags)
+            formData.append('model_type', modelType)
+
+            const response = await fetch(`${apiUrl}/api/v1/isl-videos/upload`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+                },
+                body: formData,
+            })
+
+            if (response.ok) {
+                toast.success('Video uploaded successfully')
+                setShowUploadModal(false)
+                setNewVideo({ display_name: '', description: '', tags: '', model_type: 'male' })
+                setSelectedFile(null)
+                loadVideos()
+                loadVideoCounts()
+            } else {
+                const errorData = await response.json()
+                toast.error(errorData.detail || 'Failed to upload video')
+            }
+        } catch (error) {
+            console.error('Error uploading video:', error)
+            toast.error('Error uploading video')
+        } finally {
+            setUploading(false)
+        }
     }
 
-    const handleSync = async () => {
+    const handleEditVideo = (video: ISLVideo) => {
+        setEditingVideo(video)
+        setShowEditModal(true)
+    }
+
+    const handlePlayVideo = async (video: ISLVideo) => {
+        setPlayingVideo(video)
+        setShowVideoModal(true)
+        
+        try {
+            const apiUrl = getApiUrl()
+            const response = await fetch(`${apiUrl}/api/v1/isl-videos/${video.id}/stream`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+                },
+            })
+            
+            if (response.ok) {
+                const blob = await response.blob()
+                const blobUrl = URL.createObjectURL(blob)
+                setVideoBlobUrl(blobUrl)
+            } else {
+                console.error('Failed to fetch video:', response.status, response.statusText)
+                toast.error('Failed to load video')
+            }
+        } catch (error) {
+            console.error('Error fetching video:', error)
+            toast.error('Error loading video')
+        }
+    }
+
+    const handleUpdateVideo = async () => {
+        if (!editingVideo) return
+
+        setUpdating(true)
+        try {
+            const apiUrl = getApiUrl()
+
+            const response = await fetch(`${apiUrl}/api/v1/isl-videos/${editingVideo.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+                },
+                body: JSON.stringify({
+                    display_name: editingVideo.display_name,
+                    description: editingVideo.description,
+                    tags: editingVideo.tags,
+                    is_active: editingVideo.is_active
+                }),
+            })
+
+            if (response.ok) {
+                toast.success('Video updated successfully')
+                setShowEditModal(false)
+                setEditingVideo(null)
+                loadVideos()
+            } else {
+                toast.error('Failed to update video')
+            }
+        } catch (error) {
+            console.error('Error updating video:', error)
+            toast.error('Error updating video')
+        } finally {
+            setUpdating(false)
+        }
+    }
+
+    const handleDeleteVideo = async () => {
+        if (!deletingVideo) return
+
+        setDeleting(true)
+        try {
+            const apiUrl = getApiUrl()
+
+            const response = await fetch(`${apiUrl}/api/v1/isl-videos/${deletingVideo.id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+                },
+            })
+
+            if (response.ok) {
+                toast.success('Video deleted successfully')
+                setShowDeleteModal(false)
+                setDeletingVideo(null)
+                loadVideos()
+                loadVideoCounts()
+            } else {
+                toast.error('Failed to delete video')
+            }
+        } catch (error) {
+            console.error('Error deleting video:', error)
+            toast.error('Error deleting video')
+        } finally {
+            setDeleting(false)
+        }
+    }
+
+    const handleSyncVideos = async () => {
         setSyncing(true)
-        setShowSyncModal(true)
+        setShowSyncModal(false)
+        setShowSyncProgressModal(true)
+        
+        // Initialize progress
         setSyncProgress({
-            step: 'Starting sync process...',
+            currentStep: 'Starting sync process...',
             progress: 0,
             isComplete: false,
             error: null,
-            processed: 0,
-            total: 0,
-            errors: []
+            completedSteps: {
+                maleModelScan: false,
+                maleModelProcess: false,
+                femaleModelScan: false,
+                femaleModelProcess: false
+            },
+            results: {
+                maleProcessed: 0,
+                maleErrors: 0,
+                femaleProcessed: 0,
+                femaleErrors: 0
+            }
         })
 
         try {
-            const currentHost = window.location.hostname
-            const apiUrl = currentHost === 'localhost'
-                ? 'https://localhost:5001'
-                : (process.env.NEXT_PUBLIC_API_URL || 'https://192.168.1.10:5001')
-
-            console.log('Sync - Current hostname:', currentHost)
-            console.log('Sync - API URL:', apiUrl)
-            console.log('Sync - Model type:', modelType)
-
-            setSyncProgress(prev => ({
-                ...prev,
-                step: 'Scanning folders and processing videos...',
-                progress: 50
-            }))
-
-            const formData = new FormData()
-            formData.append('model_type', modelType)
-            formData.append('force_reprocess', forceReprocess.toString())
-
-            console.log('Sync - Making request to:', `${apiUrl}/api/v1/isl-videos/sync`)
-
-            const response = await fetch(`${apiUrl}/api/v1/isl-videos/sync`, {
-                method: 'POST',
-                body: formData
-            })
-
-            console.log('Sync - Response status:', response.status)
-            console.log('Sync - Response ok:', response.ok)
-
-            if (response.ok) {
-                const result = await response.json()
+            const apiUrl = getApiUrl()
+            const modelTypes = ['male', 'female']
+            
+            for (let i = 0; i < modelTypes.length; i++) {
+                const currentModelType = modelTypes[i]
+                const isMale = currentModelType === 'male'
                 
-                setSyncProgress(prev => ({
-                    ...prev,
-                    step: result.message,
-                    progress: 100,
-                    isComplete: true,
-                    processed: result.processed,
-                    total: result.total_folders,
-                    errors: result.errors || []
-                }))
-
-                if (result.processed > 0) {
-                    toast.success(`Sync completed! Processed ${result.processed} videos.`)
-                    fetchVideos() // Refresh the video list
-                fetchVideoCounts() // Refresh the video counts
-                } else {
-                    toast.success('No new videos found to sync.')
-                }
-
-                if (result.errors && result.errors.length > 0) {
-                    console.warn('Sync completed with errors:', result.errors)
-                }
-            } else {
-                console.log('Sync - Response not ok, status:', response.status)
-                let errorMessage = 'Failed to sync videos'
                 try {
-                    const error = await response.json()
-                    console.log('Sync - Error response:', error)
-                    errorMessage = error.detail || error.message || 'Failed to sync videos'
-                } catch (parseError) {
-                    console.log('Sync - Could not parse error response:', parseError)
-                    errorMessage = `HTTP ${response.status}: ${response.statusText}`
+                    // Step 1: Scanning directory
+                    setSyncProgress(prev => ({
+                        ...prev,
+                        currentStep: `Scanning ${currentModelType} model directory...`,
+                        progress: (i * 40) + 10
+                    }))
+                    
+                    // Step 2: Processing videos
+                    setSyncProgress(prev => ({
+                        ...prev,
+                        currentStep: `Processing ${currentModelType} model videos...`,
+                        progress: (i * 40) + 20,
+                        completedSteps: {
+                            ...prev.completedSteps,
+                            [isMale ? 'maleModelScan' : 'femaleModelScan']: true
+                        }
+                    }))
+
+                    // Create FormData with required parameters
+                    const formData = new FormData()
+                    formData.append('model_type', currentModelType)
+                    formData.append('force_reprocess', forceReprocess.toString())
+
+                    const response = await fetch(`${apiUrl}/api/v1/isl-videos/sync`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+                        },
+                        body: formData
+                    })
+
+                    if (response.ok) {
+                        const result = await response.json()
+                        const processed = result.processed || 0
+                        const errors = result.errors ? result.errors.length : 0
+                        
+                        setSyncProgress(prev => ({
+                            ...prev,
+                            currentStep: `Completed ${currentModelType} model processing`,
+                            progress: (i * 40) + 40,
+                            completedSteps: {
+                                ...prev.completedSteps,
+                                [isMale ? 'maleModelProcess' : 'femaleModelProcess']: true
+                            },
+                            results: {
+                                ...prev.results,
+                                [isMale ? 'maleProcessed' : 'femaleProcessed']: processed,
+                                [isMale ? 'maleErrors' : 'femaleErrors']: errors
+                            }
+                        }))
+                        
+                        console.log(`${currentModelType} model sync: ${result.message}`)
+                    } else {
+                        const errorData = await response.json()
+                        console.error(`Failed to sync ${currentModelType} model:`, errorData.detail)
+                        
+                        setSyncProgress(prev => ({
+                            ...prev,
+                            currentStep: `Error processing ${currentModelType} model`,
+                            progress: (i * 40) + 40,
+                            completedSteps: {
+                                ...prev.completedSteps,
+                                [isMale ? 'maleModelProcess' : 'femaleModelProcess']: true
+                            },
+                            results: {
+                                ...prev.results,
+                                [isMale ? 'maleErrors' : 'femaleErrors']: 1
+                            }
+                        }))
+                    }
+                } catch (error) {
+                    console.error(`Error syncing ${currentModelType} model:`, error)
+                    setSyncProgress(prev => ({
+                        ...prev,
+                        currentStep: `Error processing ${currentModelType} model`,
+                        progress: (i * 40) + 40,
+                        completedSteps: {
+                            ...prev.completedSteps,
+                            [isMale ? 'maleModelProcess' : 'femaleModelProcess']: true
+                        },
+                        results: {
+                            ...prev.results,
+                            [isMale ? 'maleErrors' : 'femaleErrors']: 1
+                        }
+                    }))
                 }
-                
-                setSyncProgress(prev => ({
-                    ...prev,
-                    step: 'Sync failed',
-                    progress: 0,
-                    error: errorMessage
-                }))
-                toast.error(errorMessage)
             }
-        } catch (error) {
-            console.error('Sync error:', error)
-            let errorMessage = 'Network error occurred'
-            
-            if (error instanceof TypeError && error.message.includes('fetch')) {
-                errorMessage = 'Cannot connect to server. Please check if the backend is running.'
-            } else if (error instanceof Error) {
-                errorMessage = error.message
-            }
-            
+
+            // Final step: Complete
             setSyncProgress(prev => ({
                 ...prev,
-                step: 'Sync failed',
-                progress: 0,
-                error: errorMessage
+                currentStep: 'Sync completed successfully!',
+                progress: 100,
+                isComplete: true
             }))
-            toast.error(errorMessage)
+
+            // Show summary message
+            const totalProcessed = syncProgress.results.maleProcessed + syncProgress.results.femaleProcessed
+            const totalErrors = syncProgress.results.maleErrors + syncProgress.results.femaleErrors
+            
+            if (totalErrors === 0) {
+                toast.success(`Videos synced successfully! Processed ${totalProcessed} videos from both model directories.`)
+            } else {
+                toast.success(`Sync completed with ${totalProcessed} videos processed. ${totalErrors} errors occurred.`)
+            }
+            
+            loadVideos()
+            loadVideoCounts()
+        } catch (error) {
+            console.error('Error syncing videos:', error)
+            setSyncProgress(prev => ({
+                ...prev,
+                currentStep: 'Sync failed',
+                error: 'An unexpected error occurred during sync',
+                isComplete: true
+            }))
+            toast.error('Error syncing videos')
         } finally {
             setSyncing(false)
         }
     }
 
-    const closeSyncModal = () => {
-        setShowSyncModal(false)
-        setSyncProgress({
-            step: '',
-            progress: 0,
-            isComplete: false,
-            error: null,
-            processed: 0,
-            total: 0,
-            errors: []
-        })
-    }
+
+    const filteredVideos = videos.filter(video =>
+        video.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        video.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        video.tags.toLowerCase().includes(searchQuery.toLowerCase())
+    )
 
     if (!user) {
-        return <div className="min-h-screen flex items-center justify-center">Loading...</div>
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
+            </div>
+        )
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Fixed Header */}
-            <header className="fixed top-0 left-0 right-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-40">
-                {/* Left Section - Logo */}
-                <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-teal-600 rounded-full flex items-center justify-center">
-                        <div className="w-4 h-4 bg-white rounded-full"></div>
-                    </div>
-                    <div className="flex flex-col">
-                        <span className="text-xl font-semibold text-gray-900">SignSphere</span>
-                        <span className="text-sm text-gray-500">Western Railway Divyangjan Announcement System</span>
+        <DashboardLayout activeMenuItem="isl-dataset">
+            <div className="max-w-6xl mx-auto">
+                {/* Page Header */}
+                <div className="mb-8 pt-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h1 className="text-3xl font-bold text-gray-900 mb-2">ISL Dictionary</h1>
+                            <p className="text-gray-600">Manage Indian Sign Language videos for male and female AI models</p>
+                            
+                            {/* Model Count Statistics */}
+                            <div className="flex items-center space-x-6 mt-4">
+                                <div className="flex items-center space-x-2">
+                                    <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                                    <span className="text-sm font-medium text-gray-700">Male Model:</span>
+                                    <span className="text-sm font-bold text-blue-600">{maleVideoCount}</span>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <div className="w-3 h-3 bg-pink-500 rounded-full"></div>
+                                    <span className="text-sm font-medium text-gray-700">Female Model:</span>
+                                    <span className="text-sm font-bold text-pink-600">{femaleVideoCount}</span>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <div className="w-3 h-3 bg-teal-500 rounded-full"></div>
+                                    <span className="text-sm font-medium text-gray-700">Total:</span>
+                                    <span className="text-sm font-bold text-teal-600">{maleVideoCount + femaleVideoCount}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex space-x-3">
+                            <button
+                                onClick={() => setShowSyncModal(true)}
+                                disabled={syncing}
+                                className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center space-x-2"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                <span>Sync Videos</span>
+                            </button>
+                            <button
+                                onClick={() => setShowUploadModal(true)}
+                                className="bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center space-x-2"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                                <span>Upload Video</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                {/* Right Section - Profile */}
-                <div className="flex items-center space-x-4">
-                    {/* Profile */}
-                    <div className="relative profile-dropdown">
-                        <button
-                            onClick={() => setShowProfileDropdown(!showProfileDropdown)}
-                            className="flex items-center space-x-2 p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                        >
-                            <div className="w-8 h-8 bg-teal-600 rounded-full flex items-center justify-center">
-                                <span className="text-white text-sm font-medium">
-                                    {user.full_name?.charAt(0) || user.username?.charAt(0) || 'U'}
-                                </span>
-                            </div>
-                            <span className="text-sm font-medium text-gray-700">{user.full_name || user.username}</span>
-                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                        </button>
-
-                        {/* Profile Dropdown */}
-                        {showProfileDropdown && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-                                <div className="px-4 py-2 border-b border-gray-100">
-                                    <p className="text-sm font-medium text-gray-900">{user.full_name || user.username}</p>
-                                    <p className="text-xs text-gray-500">Administrator</p>
-                                </div>
+                {/* Model Type Toggle */}
+                <div className="mb-6">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                            <span className="text-sm font-medium text-gray-700">Filter by Model Type:</span>
+                            <div className="flex bg-gray-100 rounded-lg p-1">
                                 <button
-                                    onClick={handleLogout}
-                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                                    type="button"
+                                    onClick={() => setModelType('male')}
+                                    className={`px-6 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
+                                        modelType === 'male'
+                                            ? 'bg-white text-blue-600 shadow-sm'
+                                            : 'text-gray-600 hover:text-gray-900'
+                                    }`}
                                 >
-                                    Sign out
+                                    Male Model
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setModelType('female')}
+                                    className={`px-6 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
+                                        modelType === 'female'
+                                            ? 'bg-white text-pink-600 shadow-sm'
+                                            : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                                >
+                                    Female Model
                                 </button>
                             </div>
-                        )}
+                        </div>
+                        
+                        {/* Current Selection Summary */}
+                        <div className="text-sm text-gray-600">
+                            Showing <span className="font-semibold text-teal-600">{modelType === 'male' ? maleVideoCount : femaleVideoCount}</span> {modelType} model videos
+                        </div>
                     </div>
                 </div>
-            </header>
 
-            <div className="flex pt-16">
-                {/* Fixed Sidebar */}
-                <aside className="fixed left-0 top-16 bottom-0 bg-white border-r border-gray-200 w-fit min-w-64 max-w-80 z-30 overflow-y-auto">
-                    <nav className="p-4 pt-8 space-y-2 w-full">
-                        {/* Dashboard */}
-                        <Link href="/dashboard" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                {/* Search Bar */}
+                <div className="mb-6">
+                    <div className="relative">
+                        <svg className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <input
+                            type="text"
+                            placeholder="Search videos by name or description..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none w-full max-w-md text-black"
+                        />
+                    </div>
+                </div>
+
+                {/* Videos Grid */}
+                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-2">
+                    {loading ? (
+                        // Loading skeleton
+                        Array.from({ length: 60 }).map((_, index) => (
+                            <div key={index} className="bg-white rounded-lg border border-gray-200 p-2 animate-pulse">
+                                <div className="aspect-square bg-gray-200 rounded-lg mb-1"></div>
+                                <div className="h-2 bg-gray-200 rounded mb-1"></div>
+                                <div className="h-1 bg-gray-200 rounded w-2/3"></div>
+                            </div>
+                        ))
+                    ) : filteredVideos.length === 0 ? (
+                        <div className="col-span-full text-center py-12">
+                            <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                             </svg>
-                            <span>Dashboard</span>
-                        </Link>
-
-                        {/* Route Management */}
-                        <Link href="/route-management" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                            </svg>
-                            <span>Route Management</span>
-                        </Link>
-
-                        {/* AI Content Generation Section */}
-                        <div className="pt-6">
-                            <h3 className="px-3 text-sm font-bold text-gray-800 uppercase tracking-wider mb-3">
-                                AI Content Generation
-                            </h3>
-                            <Link href="/ai-generated-assets" className="hidden flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                                </svg>
-                                <span>AI Generated Assets</span>
-                            </Link>
-                            <Link href="/ai-generated-assets/translations" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-                                </svg>
-                                <span>Train Route Translations</span>
-                            </Link>
-                            <Link href="/announcement-template" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
-                                </svg>
-                                <span>Announcement Template</span>
-                            </Link>
-                            <Link href="/general-announcements" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-                                </svg>
-                                <span>General Announcements</span>
-                            </Link>
-                            <Link href="/ai-generated-assets/audio-to-isl" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                                </svg>
-                                <span>Audio File to ISL</span>
-                            </Link>
-                            <Link href="/ai-generated-assets/speech-to-isl" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                                </svg>
-                                <span>Speech to ISL</span>
-                            </Link>
-                            <Link href="/ai-generated-assets/text-to-isl" className="flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                                <span>Text to ISL</span>
-                            </Link>
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">No videos found</h3>
+                            <p className="text-gray-500 mb-4">
+                                {searchQuery ? 'No videos match your search criteria.' : 'No videos available for this model type.'}
+                            </p>
+                            <button
+                                onClick={() => setShowUploadModal(true)}
+                                className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                            >
+                                Upload First Video
+                            </button>
                         </div>
-
-                        {/* Indian Sign Language (ISL) Section */}
-                        <div className="pt-6">
-                            <h3 className="px-3 text-sm font-bold text-gray-800 uppercase tracking-wider mb-3">
-                                Indian Sign Language (ISL)
-                            </h3>
-                            <Link href="/ai-generated-assets/isl-dataset" className="flex items-center space-x-3 px-3 py-2 bg-teal-50 text-teal-700 rounded-lg">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                                </svg>
-                                <span>ISL Dictionary</span>
-                            </Link>
-                        </div>
-                    </nav>
-                </aside>
-
-                {/* Main Content */}
-                <main className="flex-1 p-6 min-h-screen pb-24 ml-64">
-                    <div className="max-w-6xl mx-auto">
-                        {/* Page Header */}
-                        <div className="mb-8 pt-4">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h1 className="text-3xl font-bold text-gray-900 mb-2">ISL Dictionary</h1>
-                                    <p className="text-gray-600">Manage Indian Sign Language videos for male and female AI models</p>
-                                </div>
-                                <div className="flex space-x-3">
-                                    <button
-                                        onClick={() => setShowSyncModal(true)}
-                                        disabled={syncing}
-                                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center space-x-2"
-                                    >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                        </svg>
-                                        <span>Sync Videos</span>
-                                    </button>
-                                    <button
-                                        onClick={() => setShowUploadModal(true)}
-                                        className="bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
-                                    >
-                                        Upload Video
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Controls */}
-                        <div className="mb-8">
-                            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                                {/* Model Type Toggle */}
-                                <div className="flex items-center space-x-4">
-                                    <span className="text-sm font-medium text-gray-700">AI Model:</span>
-                                    <div className="flex bg-gray-100 rounded-lg p-1">
-                                        <button
-                                            onClick={() => setModelType('male')}
-                                            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${modelType === 'male'
-                                                ? 'bg-white text-gray-900 shadow-sm'
-                                                : 'text-gray-600 hover:text-gray-900'
-                                                }`}
-                                        >
-                                            Male Model ({maleVideoCount})
-                                        </button>
-                                        <button
-                                            onClick={() => setModelType('female')}
-                                            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${modelType === 'female'
-                                                ? 'bg-white text-gray-900 shadow-sm'
-                                                : 'text-gray-600 hover:text-gray-900'
-                                                }`}
-                                        >
-                                            Female Model ({femaleVideoCount})
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Search */}
-                                <div className="flex items-center space-x-2">
-                                    <input
-                                        type="text"
-                                        placeholder="Search videos..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Video Grid */}
-                        {loading ? (
-                            <div className="flex justify-center items-center py-12">
-                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
-                            </div>
-                        ) : videos.length === 0 ? (
-                            <div className="text-center py-12">
-                                <div className="flex justify-center mb-4">
+                    ) : (
+                        filteredVideos.map((video) => (
+                            <div key={video.id} className="group bg-white rounded-lg border border-gray-200 p-2 hover:shadow-lg transition-all duration-200 cursor-pointer relative">
+                                {/* ISL Icon */}
+                                <div className="aspect-square bg-gray-50 rounded-lg mb-1 flex items-center justify-center overflow-hidden">
                                     <img 
                                         src="/images/icons/isl.png" 
-                                        alt="ISL Icon" 
-                                        className="w-16 h-16 object-contain opacity-60"
+                                        alt="ISL Video" 
+                                        className="w-12 h-12 object-contain"
                                     />
                                 </div>
-                                <h3 className="text-lg font-medium text-gray-900 mb-2">No videos found</h3>
-                                <p className="text-gray-500">
-                                    {searchQuery ? 'No videos match your search criteria.' : `No ${modelType} model videos uploaded yet.`}
-                                </p>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="grid grid-cols-12 gap-3 mb-8">
-                                    {videos.map((video) => (
-                                        <div key={video.id} className="bg-gray-50 rounded shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-all duration-200 cursor-pointer group relative">
-                                            <div className="aspect-square bg-gray-50 flex flex-col items-center justify-center relative" style={{ height: '80px' }}>
-                                                <img 
-                                                    src="/images/icons/isl.png" 
-                                                    alt="ISL Video" 
-                                                    className="w-12 h-12 object-contain opacity-70 group-hover:opacity-100 transition-opacity"
-                                                />
-                                                <div className="w-full h-px bg-gray-300 my-1"></div>
-                                                <p className="text-xs text-gray-600 text-center truncate w-full leading-tight">
-                                                    {video.display_name || video.filename.replace('.mp4', '')}
-                                                </p>
-                                            </div>
-                                            
-                                            {/* Hover Overlay - covers entire card */}
-                                            <div className="absolute inset-0 bg-black bg-opacity-85 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
-                                                <div className="text-center text-white p-1">
-                                                    <div className="text-xs space-y-0.5 mb-2">
-                                                        {video.duration_seconds && (
-                                                            <p className="font-medium">{formatDuration(video.duration_seconds)}</p>
-                                                        )}
-                                                        <p className="text-gray-300">{formatFileSize(video.file_size)}</p>
-                                                    </div>
-                                                    <div className="flex space-x-1.5 justify-center">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation()
-                                                                handlePlayVideo(video)
-                                                            }}
-                                                            className="bg-teal-600 hover:bg-teal-700 text-white p-1.5 rounded-full transition-colors"
-                                                            title="Play Video"
-                                                        >
-                                                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                                                                <path d="M8 5v14l11-7z"/>
-                                                            </svg>
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation()
-                                                                handleDeleteVideo(video.id, video.filename)
-                                                            }}
-                                                            className="bg-red-600 hover:bg-red-700 text-white p-1.5 rounded-full transition-colors"
-                                                            title="Delete Video"
-                                                        >
-                                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                            </svg>
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
+                                
+                                {/* Video Name */}
+                                <div className="text-center">
+                                    <h3 className="text-[10px] font-medium text-gray-900 truncate leading-tight" title={video.display_name}>
+                                        {video.display_name}
+                                    </h3>
                                 </div>
 
-                                {/* Pagination */}
-                                {totalPages > 1 && (
-                                    <div className="flex justify-center items-center space-x-2">
-                                        <button
-                                            onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                                            disabled={currentPage === 1}
-                                            className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            Previous
-                                        </button>
-
-                                        <span className="px-3 py-2 text-sm text-gray-700">
-                                            Page {currentPage} of {totalPages}
-                                        </span>
-
-                                        <button
-                                            onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                                            disabled={currentPage === totalPages}
-                                            className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            Next
-                                        </button>
+                                {/* Hover Overlay */}
+                                <div className="absolute inset-0 bg-black bg-opacity-75 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                                    <div className="text-center text-white">
+                                        {/* File Size */}
+                                        <div className="text-[10px] mb-2">
+                                            {formatFileSize(video.file_size)}
+                                        </div>
+                                        
+                                        {/* Action Buttons */}
+                                        <div className="flex space-x-1 justify-center">
+                                            {/* Play Button */}
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    handlePlayVideo(video)
+                                                }}
+                                                className="bg-green-600 hover:bg-green-700 text-white p-1 rounded-full transition-colors"
+                                                title="Play Video"
+                                            >
+                                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                                                    <path d="M8 5v14l11-7z"/>
+                                                </svg>
+                                            </button>
+                                            
+                                            {/* Delete Button */}
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    setDeletingVideo(video)
+                                                    setShowDeleteModal(true)
+                                                }}
+                                                className="bg-red-600 hover:bg-red-700 text-white p-1 rounded-full transition-colors"
+                                                title="Delete Video"
+                                            >
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                            </button>
+                                        </div>
                                     </div>
-                                )}
-                            </>
-                        )}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                    <div className="mt-8 flex items-center justify-between">
+                        <div className="text-sm text-gray-700">
+                            Showing page {currentPage} of {totalPages}
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <button
+                                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                                disabled={currentPage === 1}
+                                className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Previous
+                            </button>
+                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                const pageNum = i + 1;
+                                return (
+                                    <button
+                                        key={pageNum}
+                                        onClick={() => setCurrentPage(pageNum)}
+                                        className={`px-3 py-2 text-sm font-medium rounded-md ${
+                                            currentPage === pageNum
+                                                ? 'bg-teal-600 text-white'
+                                                : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        {pageNum}
+                                    </button>
+                                );
+                            })}
+                            <button
+                                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                                disabled={currentPage === totalPages}
+                                className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Next
+                            </button>
+                        </div>
                     </div>
-                </main>
+                )}
             </div>
 
             {/* Upload Modal */}
             {showUploadModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-                        <div className="p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-lg font-medium text-gray-900">Upload ISL Video</h3>
-                                <button
-                                    onClick={() => {
-                                        setShowUploadModal(false)
-                                        setSelectedFile(null)
-                                        setDisplayName('')
-                                    }}
-                                    className="text-gray-400 hover:text-gray-600"
-                                >
-                                    ✕
-                                </button>
-                            </div>
-
-                            {/* Model Type Selection */}
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    AI Model Type
-                                </label>
-                                <div className="flex bg-gray-100 rounded-lg p-1">
-                                    <button
-                                        onClick={() => setUploadModelType('male')}
-                                        className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${uploadModelType === 'male'
-                                            ? 'bg-white text-gray-900 shadow-sm'
-                                            : 'text-gray-600 hover:text-gray-900'
-                                            }`}
-                                    >
-                                        Male Model
-                                    </button>
-                                    <button
-                                        onClick={() => setUploadModelType('female')}
-                                        className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${uploadModelType === 'female'
-                                            ? 'bg-white text-gray-900 shadow-sm'
-                                            : 'text-gray-600 hover:text-gray-900'
-                                            }`}
-                                    >
-                                        Female Model
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* File Upload */}
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Video File (MP4 only)
-                                </label>
-                                <div
-                                    className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${dragActive
-                                        ? 'border-teal-500 bg-teal-50'
-                                        : 'border-gray-300 hover:border-gray-400'
-                                        }`}
-                                    onDragEnter={handleDrag}
-                                    onDragLeave={handleDrag}
-                                    onDragOver={handleDrag}
-                                    onDrop={handleDrop}
-                                >
-                                    {selectedFile ? (
-                                        <div>
-                                            <div className="text-sm font-medium text-gray-900 mb-1">
-                                                {selectedFile.name}
-                                            </div>
-                                            <div className="text-sm text-gray-500">
-                                                {formatFileSize(selectedFile.size)}
-                                            </div>
-                                            <button
-                                                onClick={() => setSelectedFile(null)}
-                                                className="mt-2 text-sm text-red-600 hover:text-red-700"
-                                            >
-                                                Remove
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div>
-                                            <div className="text-4xl text-gray-400 mb-2">📁</div>
-                                            <p className="text-sm text-gray-600 mb-2">
-                                                Drag and drop your MP4 video here, or
-                                            </p>
-                                            <button
-                                                onClick={() => fileInputRef.current?.click()}
-                                                className="text-teal-600 hover:text-teal-700 text-sm font-medium"
-                                            >
-                                                browse files
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Upload ISL Video</h2>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Display Name *</label>
                                 <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept=".mp4,video/mp4"
-                                    onChange={handleFileSelect}
-                                    className="hidden"
+                                    type="text"
+                                    value={newVideo.display_name}
+                                    onChange={(e) => setNewVideo({ ...newVideo, display_name: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                                    placeholder="e.g., Hello"
                                 />
                             </div>
-
-
-                            {/* Actions */}
-                            <div className="flex space-x-3">
-                                <button
-                                    onClick={() => {
-                                        setShowUploadModal(false)
-                                        setSelectedFile(null)
-                                        setDisplayName('')
-                                    }}
-                                    className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleUpload}
-                                    disabled={!selectedFile || uploading}
-                                    className="flex-1 px-4 py-2 text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
-                                >
-                                    {uploading ? 'Uploading...' : 'Upload'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Upload Progress Modal */}
-            {showUploadProgressModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-                        <div className="p-6">
-                            {/* Header */}
-                            <div className="flex items-center mb-6">
-                                <div className="flex-shrink-0">
-                                    <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center">
-                                        <svg className="w-6 h-6 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                                        </svg>
-                                    </div>
-                                </div>
-                                <div className="ml-4">
-                                    <h3 className="text-lg font-medium text-gray-900">Uploading Video</h3>
-                                    <p className="text-sm text-gray-500">
-                                        {selectedFile?.name} ({uploadModelType} model)
-                                    </p>
-                                </div>
-                            </div>
-
-                            {/* Progress Bar */}
-                            <div className="mb-6">
-                                <div className="flex justify-between text-sm text-gray-600 mb-2">
-                                    <span>{uploadProgress.step}</span>
-                                    <span>{uploadProgress.progress}%</span>
-                                </div>
-                                <div className="w-full bg-gray-200 rounded-full h-2">
-                                    <div
-                                        className={`h-2 rounded-full transition-all duration-500 ${uploadProgress.isComplete
-                                            ? 'bg-green-500'
-                                            : uploadProgress.error
-                                                ? 'bg-red-500'
-                                                : 'bg-teal-500'
-                                            }`}
-                                        style={{ width: `${uploadProgress.progress}%` }}
-                                    ></div>
-                                </div>
-                            </div>
-
-                            {/* Status Message */}
-                            <div className="mb-6">
-                                {uploadProgress.error ? (
-                                    <div className="flex items-center p-3 bg-red-50 border border-red-200 rounded-lg">
-                                        <svg className="w-5 h-5 text-red-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                        <div>
-                                            <p className="text-sm font-medium text-red-800">Error</p>
-                                            <p className="text-sm text-red-600">{uploadProgress.error}</p>
-                                        </div>
-                                    </div>
-                                ) : uploadProgress.isComplete ? (
-                                    <div className="space-y-3">
-                                        <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg">
-                                            <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                            </svg>
-                                            <div>
-                                                <p className="text-sm font-medium text-green-800">Success</p>
-                                                <p className="text-sm text-green-600">{uploadProgress.step}</p>
-                                            </div>
-                                        </div>
-                                        
-                                        {/* Duplicate Warnings */}
-                                        {uploadProgress.duplicateWarnings && uploadProgress.duplicateWarnings.length > 0 && (
-                                            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                                <div className="flex items-start">
-                                                    <svg className="w-5 h-5 text-yellow-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                                    </svg>
-                                                    <div className="flex-1">
-                                                        <p className="text-sm font-medium text-yellow-800 mb-2">Duplicate Videos Detected</p>
-                                                        <div className="space-y-2">
-                                                            {uploadProgress.duplicateWarnings.map((warning, index) => (
-                                                                <div key={index} className="text-sm text-yellow-700">
-                                                                    <p className="font-medium">{warning.message}</p>
-                                                                    {warning.duplicate_video && (
-                                                                        <p className="text-xs text-yellow-600 mt-1">
-                                                                            Existing: "{warning.duplicate_video.display_name}" 
-                                                                            ({formatFileSize(warning.duplicate_video.file_size)})
-                                                                        </p>
-                                                                    )}
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center p-3 bg-teal-50 border border-teal-200 rounded-lg">
-                                        <svg className="w-5 h-5 text-teal-500 mr-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                        </svg>
-                                        <div>
-                                            <p className="text-sm font-medium text-teal-800">Processing</p>
-                                            <p className="text-sm text-teal-600">Please wait while we upload and process your video...</p>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Processing Steps Info */}
-                            {!uploadProgress.error && !uploadProgress.isComplete && (
-                                <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                                    <h4 className="text-sm font-medium text-gray-900 mb-2">Processing Steps:</h4>
-                                    <ul className="text-sm text-gray-600 space-y-1">
-                                        <li className="flex items-center">
-                                            <span className="w-2 h-2 bg-teal-500 rounded-full mr-2"></span>
-                                            Upload video file
-                                        </li>
-                                        <li className="flex items-center">
-                                            <span className="w-2 h-2 bg-teal-500 rounded-full mr-2"></span>
-                                            Save to database
-                                        </li>
-                                        <li className="flex items-center">
-                                            <span className="w-2 h-2 bg-teal-500 rounded-full mr-2"></span>
-                                            Process with FFmpeg (30fps, 1280x720)
-                                        </li>
-                                        <li className="flex items-center">
-                                            <span className="w-2 h-2 bg-teal-500 rounded-full mr-2"></span>
-                                            Extract metadata
-                                        </li>
-                                    </ul>
-                                </div>
-                            )}
-
-                            {/* Action Buttons */}
-                            {uploadProgress.error && (
-                                <div className="flex justify-end space-x-3">
-                                    <button
-                                        onClick={() => {
-                                            setShowUploadProgressModal(false)
-                                            setUploadProgress({
-                                                step: '',
-                                                progress: 0,
-                                                isComplete: false,
-                                                error: null,
-                                                duplicateWarnings: null
-                                            })
-                                        }}
-                                        className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-                                    >
-                                        Close
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Video Player Modal */}
-            {showVideoPlayer && currentVideo && (
-                <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-                        {/* Modal Header */}
-                        <div className="flex items-center justify-between p-4 border-b border-gray-200">
                             <div>
-                                <h3 className="text-lg font-semibold text-gray-900">
-                                    {currentVideo.display_name || currentVideo.filename.replace('.mp4', '')}
-                                </h3>
-                                <p className="text-sm text-gray-500">
-                                    Duration: {formatDuration(currentVideo.duration_seconds)} • Size: {formatFileSize(currentVideo.file_size)}
-                                </p>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                <textarea
+                                    value={newVideo.description}
+                                    onChange={(e) => setNewVideo({ ...newVideo, description: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                                    rows={3}
+                                    placeholder="Describe this sign..."
+                                />
                             </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                                <input
+                                    type="text"
+                                    value={newVideo.tags}
+                                    onChange={(e) => setNewVideo({ ...newVideo, tags: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                                    placeholder="e.g., greeting, basic, common"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Video File *</label>
+                                <input
+                                    type="file"
+                                    accept="video/*"
+                                    onChange={handleFileSelect}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex justify-end space-x-3 mt-6">
                             <button
-                                onClick={closeVideoPlayer}
+                                onClick={() => setShowUploadModal(false)}
+                                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleUpload}
+                                disabled={uploading || !newVideo.display_name || !selectedFile}
+                                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                            >
+                                {uploading ? 'Uploading...' : 'Upload'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Modal */}
+            {showEditModal && editingVideo && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Edit Video</h2>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Display Name *</label>
+                                <input
+                                    type="text"
+                                    value={editingVideo.display_name}
+                                    onChange={(e) => setEditingVideo({ ...editingVideo, display_name: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                <textarea
+                                    value={editingVideo.description}
+                                    onChange={(e) => setEditingVideo({ ...editingVideo, description: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                                    rows={3}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                                <input
+                                    type="text"
+                                    value={editingVideo.tags}
+                                    onChange={(e) => setEditingVideo({ ...editingVideo, tags: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="flex items-center">
+                                    <input
+                                        type="checkbox"
+                                        checked={editingVideo.is_active}
+                                        onChange={(e) => setEditingVideo({ ...editingVideo, is_active: e.target.checked })}
+                                        className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                                    />
+                                    <span className="ml-2 text-sm text-gray-700">Active</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div className="flex justify-end space-x-3 mt-6">
+                            <button
+                                onClick={() => setShowEditModal(false)}
+                                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleUpdateVideo}
+                                disabled={updating}
+                                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                            >
+                                {updating ? 'Updating...' : 'Update'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {showDeleteModal && deletingVideo && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Delete Video</h2>
+                        <p className="text-gray-600 mb-6">
+                            Are you sure you want to delete "{deletingVideo.display_name}"? This action cannot be undone.
+                        </p>
+                        <div className="flex justify-end space-x-3">
+                            <button
+                                onClick={() => setShowDeleteModal(false)}
+                                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDeleteVideo}
+                                disabled={deleting}
+                                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                            >
+                                {deleting ? 'Deleting...' : 'Delete'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Sync Modal */}
+            {showSyncModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Sync Videos</h2>
+                        <p className="text-gray-600 mb-4">
+                            This will scan both male-model and female-model directories and sync all available ISL videos to the database.
+                        </p>
+                        
+                        {/* Force Reprocess Option */}
+                        <div className="mb-6">
+                            <label className="flex items-center space-x-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={forceReprocess}
+                                    onChange={(e) => setForceReprocess(e.target.checked)}
+                                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                                />
+                                <div>
+                                    <span className="text-sm font-medium text-gray-700">Force reprocess existing videos</span>
+                                    <p className="text-xs text-gray-500">Check this to reprocess videos that are already in the database</p>
+                                </div>
+                            </label>
+                        </div>
+                        
+                        <div className="flex justify-end space-x-3">
+                            <button
+                                onClick={() => setShowSyncModal(false)}
+                                disabled={syncing}
+                                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSyncVideos}
+                                disabled={syncing}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                            >
+                                {syncing ? 'Syncing...' : 'Sync Videos'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Video Modal */}
+            {showVideoModal && playingVideo && (
+                <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b">
+                            <h3 className="text-lg font-semibold text-gray-900">
+                                {playingVideo.display_name}
+                            </h3>
+                            <button
+                                onClick={() => {
+                                    setShowVideoModal(false)
+                                    setPlayingVideo(null)
+                                    if (videoBlobUrl) {
+                                        URL.revokeObjectURL(videoBlobUrl)
+                                        setVideoBlobUrl(null)
+                                    }
+                                }}
                                 className="text-gray-400 hover:text-gray-600 transition-colors"
                             >
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1188,81 +996,33 @@ export default function ISLDatasetPage() {
                                 </svg>
                             </button>
                         </div>
-
-                        {/* Video Player */}
                         <div className="p-4">
-                            <div className="relative bg-black rounded-lg overflow-hidden">
-                                <video
-                                    autoPlay
-                                    loop
-                                    muted
-                                    className="w-full h-auto max-h-[60vh]"
-                                    preload="metadata"
-                                    onError={(e) => {
-                                        console.error('Video error:', e);
-                                        console.error('Video src:', `/videos/isl-videos/${currentVideo.model_type}-model/${currentVideo.filename.replace('.mp4', '')}/${currentVideo.filename}`);
-                                    }}
-                                    onLoadStart={() => {
-                                        console.log('Video load started');
-                                    }}
-                                    onCanPlay={() => {
-                                        console.log('Video can play');
-                                    }}
-                                >
-                                    <source src={`/videos/isl-videos/${currentVideo.model_type}-model/${currentVideo.filename.replace('.mp4', '')}/${currentVideo.filename}`} type="video/mp4" />
-                                    Your browser does not support the video tag.
-                                </video>
-                            </div>
-                        </div>
-
-                    </div>
-                </div>
-            )}
-
-            {/* Delete Confirmation Modal */}
-            {showDeleteModal && videoToDelete && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-                        <div className="p-6">
-                            {/* Header */}
-                            <div className="flex items-center mb-4">
-                                <div className="flex-shrink-0">
-                                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                                        <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                        </svg>
+                            <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                                {videoBlobUrl ? (
+                                    <video
+                                        className="w-full h-full"
+                                        controls
+                                        autoPlay
+                                        preload="metadata"
+                                        onError={(e) => {
+                                            console.error('Video error:', e)
+                                            console.error('Video source:', videoBlobUrl)
+                                        }}
+                                        onLoadStart={() => {
+                                            console.log('Video loading started:', videoBlobUrl)
+                                        }}
+                                    >
+                                        <source src={videoBlobUrl} type="video/mp4" />
+                                        Your browser does not support the video tag.
+                                    </video>
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-white">
+                                        <div className="text-center">
+                                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
+                                            <p>Loading video...</p>
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="ml-3">
-                                    <h3 className="text-lg font-medium text-gray-900">Delete Video</h3>
-                                    <p className="text-sm text-gray-500">This action cannot be undone.</p>
-                                </div>
-                            </div>
-
-                            {/* Content */}
-                            <div className="mb-6">
-                                <p className="text-sm text-gray-500">
-                                    Are you sure you want to delete the video <span className="font-semibold text-gray-900">{videoToDelete.filename}</span>?
-                                    This action cannot be undone.
-                                </p>
-                            </div>
-
-                            {/* Action Buttons */}
-                            <div className="flex justify-end space-x-3">
-                                <button
-                                    onClick={cancelDeleteVideo}
-                                    className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors duration-200"
-                                    disabled={deletingVideo}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={confirmDeleteVideo}
-                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    disabled={deletingVideo}
-                                >
-                                    {deletingVideo ? 'Deleting...' : 'Delete'}
-                                </button>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -1270,143 +1030,155 @@ export default function ISLDatasetPage() {
             )}
 
             {/* Sync Progress Modal */}
-            {showSyncModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            {showSyncProgressModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-hidden">
+                        <div className="flex items-center justify-between p-6 border-b">
+                            <h3 className="text-xl font-semibold text-gray-900">Syncing ISL Videos</h3>
+                            {syncProgress.isComplete && (
+                                <button
+                                    onClick={() => setShowSyncProgressModal(false)}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            )}
+                        </div>
+                        
                         <div className="p-6">
-                            {/* Header */}
-                            <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-lg font-medium text-gray-900">Sync Videos</h3>
-                                {!syncing && (
-                                    <button
-                                        onClick={closeSyncModal}
-                                        className="text-gray-400 hover:text-gray-600 transition-colors"
-                                    >
-                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                    </button>
+                            {/* Progress Bar */}
+                            <div className="mb-6">
+                                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                                    <span>Progress</span>
+                                    <span>{syncProgress.progress}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div 
+                                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                        style={{ width: `${syncProgress.progress}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+
+                            {/* Current Step */}
+                            <div className="mb-6">
+                                <h4 className="text-lg font-medium text-gray-900 mb-2">Current Step</h4>
+                                <p className="text-gray-600">{syncProgress.currentStep}</p>
+                                {forceReprocess && (
+                                    <p className="text-sm text-orange-600 mt-1">
+                                        ⚠️ Force reprocess enabled - existing videos will be reprocessed
+                                    </p>
                                 )}
                             </div>
 
-                            {/* Options */}
-                            {!syncing && !syncProgress.isComplete && !syncProgress.error && (
-                                <div className="mb-6">
-                                    <div className="flex items-center">
-                                        <input
-                                            type="checkbox"
-                                            id="forceReprocess"
-                                            checked={forceReprocess}
-                                            onChange={(e) => setForceReprocess(e.target.checked)}
-                                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                        />
-                                        <label htmlFor="forceReprocess" className="ml-2 text-sm text-gray-700">
-                                            Force reprocess existing videos
-                                        </label>
-                                    </div>
-                                    <p className="text-xs text-gray-500 mt-1">
-                                        Check this to re-process videos that are already in the database
-                                    </p>
-                                </div>
-                            )}
-
-                            {/* Start Sync Button */}
-                            {!syncing && !syncProgress.isComplete && !syncProgress.error && (
-                                <div className="mb-6">
-                                    <button
-                                        onClick={handleSync}
-                                        className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                                    >
-                                        Start Sync
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* Progress Section */}
-                            {syncing && !syncProgress.isComplete && !syncProgress.error && (
-                                <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        <div className="flex justify-between text-sm text-gray-600">
-                                            <span>{syncProgress.step}</span>
-                                            <span>{syncProgress.progress}%</span>
+                            {/* Step Progress */}
+                            <div className="mb-6">
+                                <h4 className="text-lg font-medium text-gray-900 mb-4">Sync Steps</h4>
+                                <div className="space-y-3">
+                                    {/* Male Model Steps */}
+                                    <div className="flex items-center space-x-3">
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                                            syncProgress.completedSteps.maleModelScan ? 'bg-green-500' : 'bg-gray-300'
+                                        }`}>
+                                            {syncProgress.completedSteps.maleModelScan && (
+                                                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                </svg>
+                                            )}
                                         </div>
-                                        <div className="w-full bg-gray-200 rounded-full h-2">
-                                            <div
-                                                className="bg-blue-600 h-2 rounded-full transition-all duration-500"
-                                                style={{ width: `${syncProgress.progress}%` }}
-                                            />
+                                        <span className="text-sm text-gray-700">Scan male-model directory</span>
+                                    </div>
+                                    
+                                    <div className="flex items-center space-x-3">
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                                            syncProgress.completedSteps.maleModelProcess ? 'bg-green-500' : 'bg-gray-300'
+                                        }`}>
+                                            {syncProgress.completedSteps.maleModelProcess && (
+                                                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                </svg>
+                                            )}
+                                        </div>
+                                        <span className="text-sm text-gray-700">Process male-model videos</span>
+                                    </div>
+
+                                    {/* Female Model Steps */}
+                                    <div className="flex items-center space-x-3">
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                                            syncProgress.completedSteps.femaleModelScan ? 'bg-green-500' : 'bg-gray-300'
+                                        }`}>
+                                            {syncProgress.completedSteps.femaleModelScan && (
+                                                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                </svg>
+                                            )}
+                                        </div>
+                                        <span className="text-sm text-gray-700">Scan female-model directory</span>
+                                    </div>
+                                    
+                                    <div className="flex items-center space-x-3">
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                                            syncProgress.completedSteps.femaleModelProcess ? 'bg-green-500' : 'bg-gray-300'
+                                        }`}>
+                                            {syncProgress.completedSteps.femaleModelProcess && (
+                                                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                </svg>
+                                            )}
+                                        </div>
+                                        <span className="text-sm text-gray-700">Process female-model videos</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Results Summary */}
+                            {syncProgress.isComplete && (
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <h4 className="text-lg font-medium text-gray-900 mb-3">Sync Results</h4>
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                        <div>
+                                            <span className="font-medium text-black">Male Model:</span>
+                                            <span className="ml-2 text-black">{syncProgress.results.maleProcessed} videos processed</span>
+                                            {syncProgress.results.maleErrors > 0 && (
+                                                <span className="ml-2 text-red-600">({syncProgress.results.maleErrors} errors)</span>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <span className="font-medium text-black">Female Model:</span>
+                                            <span className="ml-2 text-black">{syncProgress.results.femaleProcessed} videos processed</span>
+                                            {syncProgress.results.femaleErrors > 0 && (
+                                                <span className="ml-2 text-red-600">({syncProgress.results.femaleErrors} errors)</span>
+                                            )}
                                         </div>
                                     </div>
-                                    <p className="text-sm text-gray-500">
-                                        Please wait while we sync your videos...
-                                    </p>
-                                </div>
-                            )}
-
-                            {/* Error Section */}
-                            {syncProgress.error && (
-                                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                                    <div className="flex items-center">
-                                        <svg className="w-5 h-5 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                        <h3 className="text-lg font-semibold text-red-800">Sync Failed</h3>
-                                    </div>
-                                    <p className="text-red-700 mt-2">{syncProgress.error}</p>
-                                    <button
-                                        onClick={closeSyncModal}
-                                        className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                                    >
-                                        Close
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* Success Section */}
-                            {syncProgress.isComplete && !syncProgress.error && (
-                                <div className="space-y-4">
-                                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                        <div className="flex items-center">
-                                            <svg className="w-5 h-5 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                            </svg>
-                                            <h3 className="text-lg font-semibold text-green-800">Sync Completed</h3>
-                                        </div>
-                                        <p className="text-green-700 mt-2">{syncProgress.step}</p>
-                                        {syncProgress.processed > 0 && (
-                                            <p className="text-sm text-green-600 mt-1">
-                                                Processed {syncProgress.processed} of {syncProgress.total} videos
-                                            </p>
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                        <span className="font-medium text-black">Total:</span>
+                                        <span className="ml-2 text-black">{syncProgress.results.maleProcessed + syncProgress.results.femaleProcessed} videos processed</span>
+                                        {(syncProgress.results.maleErrors + syncProgress.results.femaleErrors) > 0 && (
+                                            <span className="ml-2 text-red-600">({syncProgress.results.maleErrors + syncProgress.results.femaleErrors} errors)</span>
                                         )}
                                     </div>
+                                </div>
+                            )}
 
-                                    {/* Error Summary */}
-                                    {syncProgress.errors && syncProgress.errors.length > 0 && (
-                                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                                            <h4 className="text-sm font-medium text-yellow-800 mb-2">Errors encountered:</h4>
-                                            <ul className="text-sm text-yellow-700 space-y-1">
-                                                {syncProgress.errors.slice(0, 3).map((error, index) => (
-                                                    <li key={index} className="truncate">• {error}</li>
-                                                ))}
-                                                {syncProgress.errors.length > 3 && (
-                                                    <li className="text-yellow-600">... and {syncProgress.errors.length - 3} more</li>
-                                                )}
-                                            </ul>
-                                        </div>
-                                    )}
-
-                                    <button
-                                        onClick={closeSyncModal}
-                                        className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                                    >
-                                        Close
-                                    </button>
+                            {/* Error Display */}
+                            {syncProgress.error && (
+                                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                                    <div className="flex items-center">
+                                        <svg className="w-5 h-5 text-red-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                        </svg>
+                                        <span className="text-red-800 font-medium">Error:</span>
+                                    </div>
+                                    <p className="text-red-700 mt-1">{syncProgress.error}</p>
                                 </div>
                             )}
                         </div>
                     </div>
                 </div>
             )}
-        </div>
+        </DashboardLayout>
     )
 }
